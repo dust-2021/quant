@@ -18,9 +18,9 @@ interface param {
 export type Strategy = {
     uuid: string,
     name: string,
-    param: param[],
+    params: param[],
     version: string,
-    factors: Factor[],
+    factors: string[],
     description: string,
     content: string,
     group: string,
@@ -29,37 +29,50 @@ export type Strategy = {
 export type Factor = {
     uuid: string,
     name: string,
-    param: param[],
-    output: number | string | boolean,
+    params: param[],
     version: string,
     description: string,
-    content: string
+    content: string,
+    group: string,
 }
-
-export const StrategyStore = defineStore('strategy',
-    {
-        state: () => ({
-                data: new Map<string, Strategy>(),
-                
-            }),
-        getters: {
-
-        },
-        actions: {
-
-        }
-    }
-)
 
 // =========== 策略结果 ===============
 
 export const StrategyResultStore = defineStore('strategyResult', {
     state: () => ({
-        status: new Map<string, boolean>(),
-        result: new Map<string, any>(),
-        check: (): boolean => {return true},
-    }),
+        data: new Map<string, {}>(),
 
+    }),
+    actions: {
+        add(name: string, is_multi: boolean = false){
+
+        }
+    }
+})
+
+// =========== 主题/暗色模式 ===============
+
+export const ThemeStore = defineStore('theme', {
+    state: () => ({
+        isDark: localStorage.getItem('theme-dark') === 'true',
+    }),
+    actions: {
+        toggle() {
+            this.isDark = !this.isDark;
+            localStorage.setItem('theme-dark', String(this.isDark));
+            this.applyTheme();
+        },
+        applyTheme() {
+            if (this.isDark) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        },
+        init() {
+            this.applyTheme();
+        },
+    },
 })
 
 

@@ -13,9 +13,78 @@
 
 <style>
     html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    /* overflow: hidden; */
-}
+        margin: 0;
+        padding: 0;
+        height: 100%;
+    }
+
+    /* ============ 主题 CSS 变量 ============ */
+    :root {
+        /* 页面/区域背景 */
+        --bg-page: #f5f7fa;
+        --bg-main: #ffffff;
+        --bg-card: #ffffff;
+        /* 标签/徽章 */
+        --bg-tag: #f4f6fb;
+        --bg-tag-hover: #ecf5ff;
+        --border-tag: #e4e7ed;
+        /* 文字 */
+        --text-primary: #303133;
+        --text-regular: #606266;
+        --text-secondary: #909399;
+        /* 菜单 */
+        --bg-menu: #ffffff;
+        --bg-menu-hover: #f5f7fa;
+        --bg-menu-active: #ecf5ff;
+        --border-menu: #e6e6e6;
+        --text-menu: #303133;
+        --text-menu-hover: #303133;
+        /* 过渡 */
+        transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    }
+
+    html.dark {
+        color-scheme: dark;
+        --bg-page: #141414;
+        --bg-main: #1a1a2e;
+        --bg-card: #1d1e1f;
+        --bg-tag: #2d2d2d;
+        --bg-tag-hover: #3a3a3a;
+        --border-tag: #444444;
+        --text-primary: #e0e0e0;
+        --text-regular: #b0b0b0;
+        --text-secondary: #808080;
+        --bg-menu: #1d1e1f;
+        --bg-menu-hover: #2d2d2d;
+        --bg-menu-active: #2d2d2d;
+        --border-menu: #333333;
+        --text-menu: #b0b0b0;
+        --text-menu-hover: #ffffff;
+    }
+
+    /* ============ 全局应用变量 ============ */
+    body {
+        background-color: var(--bg-page);
+        color: var(--text-primary);
+    }
+
+    .layout-container {
+        background-color: var(--bg-page);
+    }
+
+    .main-content {
+        background-color: var(--bg-page);
+    }
+
+    .card {
+        background-color: var(--bg-card);
+    }
+
+    /* ============ Element Plus 菜单微调 ============ */
+    html.dark .el-menu {
+        border-right-color: var(--border-menu);
+    }
+    html.dark .el-menu .el-menu-item.is-active {
+        color: #409eff;
+    }
 </style>

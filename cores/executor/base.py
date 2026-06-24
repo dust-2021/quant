@@ -1,23 +1,18 @@
 from concurrent.futures import ProcessPoolExecutor
+import json
 import os
 import typing as t
 from types import ModuleType
 import importlib.util
-import pandas as pd
-from database.base import sync_session, db_path
-from database.model import Strategy, Factor, Config
-import sqlite3
-from dask import dataframe as dd
-from dask.delayed import delayed
+from database.base import sync_session
+from database.model import Strategy, Factor
+from utils.logger import setup_logging
 
 
-class BaseExecutor():
+class Core():
     """
     """
-    name: str = 'base'
-    _pool = ProcessPoolExecutor(max_workers=os.cpu_count() or 1, max_tasks_per_child=1)
-    _result: t.Dict[str, t.Any] = {}
-    db_conn: sqlite3.Connection = sqlite3.connect(db_path)
+    _pool = ProcessPoolExecutor(max_workers=os.cpu_count() or 1, max_tasks_per_child=100, initializer=setup_logging)
     
     @staticmethod
     def load_file(name: str, content: str) -> ModuleType | None:
@@ -30,67 +25,62 @@ class BaseExecutor():
         mod = importlib.util.module_from_spec(mod)
         try:
             exec(content, mod.__dict__)
-        except Exception as e:
-            return None
-        return mod
-    
-    @staticmethod
-    def load_strategy(strategy: str) -> ModuleType | None:
-        """
-        加载策略
-        """
-        with sync_session() as s:
-            stra = s.query(Strategy).filter(Strategy.name == strategy).first()
-            if stra is None:
-                return None
-            factor = stra.factors.split(',')
-            factors = s.query(Factor).filter(Factor.name.in_(stra.factors.split(','))).all()
-            if set(factor) != set([x.name for x in factors]):
-                return None
-    
-    def load_data(self) -> pd.DataFrame:
-        query = """
-        select * from data where time >= ? and time <= ?
-        """
-        data = pd.read_sql_query(query, self.db_conn, params=self.time)
-        
-        return data
-    
-    def __init__(self, strategy: str, time: t.Tuple[int, int], factors: t.Optional[t.Sequence[str]] = None):
-        self.strategy = strategy
-        self.time = time
-        self.factors = factors
-        self.context: t.Dict[str, t.Any] = {}
-    
-    def _run(self, *args) -> t.Any:
-        data = self.load_data()
-        stra = self.load_file(self.strategy, self.strategy)
-        if stra is None:
-            return None
-        setattr(stra, 'context', self.context)
-        try:
-            func = getattr(stra, 'run')
-            if not callable(func):
-                return None
-            return func(data, *args)
         except Exception:
             return None
-        
-    def get_result(self, uuid: str) -> t.Any:
-        return self._result.get(uuid, None)
-    
-    def __call__(self, args: t.Sequence[t.Tuple[t.Any]]) -> t.Any:
-        if len(args) == 0:
-            return []
-        if self._pool is None:
-            raise NotImplementedError("server mode not support")
-        return self._pool.map(self._run, [(self, *x) for x in args])
+        return mod
 
+    @staticmethod
+    def prepare_raw(strategy_uuid: str) -> t.Dict[str, t.Any]:
+        """
+        准备策略原始数据（可被 pickle 序列化，用于进程池传递）。
+        仅查询数据库获取策略/因子的源码和参数，不加载为模块对象。
 
-class CTAExecutor(BaseExecutor):
-    """
-    """
-    name: str = 'cta'
+        Returns:
+            {
+                'strategy': {'name': str, 'content': str, 'params': list},
+                'factors': [{'name': str, 'content': str, 'params': list}, ...]
+            }
+        """
+        with sync_session() as s:
+            stra = s.query(Strategy).filter(Strategy.uuid == strategy_uuid).first()
+            if stra is None:
+                raise ValueError(f"strategy {strategy_uuid} not found")
+            factor_uuids: t.List[str] = json.loads(t.cast(str, stra.factors))
+            factors = s.query(Factor).filter(Factor.uuid.in_(factor_uuids)).all()
+            if set(factor_uuids) != set([x.uuid for x in factors]):
+                raise ValueError(f"factors {factor_uuids} not found")
+
+        return {
+            'strategy': {
+                'name': t.cast(str, stra.name),
+                'content': t.cast(str, stra.content),
+                'params': t.cast(list, stra.params),
+            },
+            'factors': [
+                {
+                    'name': t.cast(str, f.name),
+                    'content': t.cast(str, f.content),
+                    'params': t.cast(list, f.params),
+                }
+                for f in factors
+            ],
+        }
     
     def __init__(self):
         pass
+    
+    @classmethod
+    def submit_task(cls, f: t.Callable, *args, **kwargs):
+        """
+        提交策略计算任务，返回任务id
+        """
+        cls._pool.submit(f, *args, **kwargs)
+    
+    @classmethod
+    def map_task(cls, f: t.Callable, *iterables):
+        """
+        提交多个策略计算任务（非阻塞，立即返回）。
+        每个任务通过 args[0] 作为 task_id 存入 _result。
+        """
+        for args in zip(*iterables):
+            cls._pool.submit(f, *args)

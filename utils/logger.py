@@ -1,6 +1,8 @@
 import inspect
 import logging
+import os
 from loguru import logger
+from config import BASE_PATH
 
 
 class InterceptHandler(logging.Handler):
@@ -32,7 +34,7 @@ class InterceptHandler(logging.Handler):
 
 def setup_logging(
     level: str = "INFO",
-    sqlalchemy_level: str = "INFO",
+    sqlalchemy_level: str = "WARNING",
     aiohttp_level: str = "INFO",
 ) -> None:
     """
@@ -45,6 +47,7 @@ def setup_logging(
     """
     # 1. 移除 loguru 默认 handler，重新配置
     logger.remove()
+    # 控制台 sink
     logger.add(
         sink=__import__("sys").stderr,
         level=level,
@@ -55,6 +58,18 @@ def setup_logging(
             "<level>{message}</level>"
         ),
         colorize=True,
+    )
+    # 文件 sink（多进程安全）
+    _log_dir = os.path.join(BASE_PATH, "logs")
+    os.makedirs(_log_dir, exist_ok=True)
+    logger.add(
+        sink=os.path.join(_log_dir, "quant_{time:YYYY-MM-DD}.log"),
+        level=level,
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} | {message}",
+        rotation="10 MB",
+        retention="7 days",
+        enqueue=True,
+        encoding="utf-8",
     )
 
     # 2. 拦截所有标准 logging

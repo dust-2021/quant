@@ -90,8 +90,8 @@ onBeforeMount(() => {
     height: 32px;
     padding: 0 8px;
     border-radius: 6px;
-    background: #f4f6fb;
-    border: 1px solid #e4e7ed;
+    background: var(--bg-tag);
+    border: 1px solid var(--border-tag);
     box-sizing: border-box;
     transition: all 0.2s ease;
     flex-shrink: 0;
@@ -99,7 +99,7 @@ onBeforeMount(() => {
 }
 .param-band-card:hover {
     border-color: #409eff;
-    background: #ecf5ff;
+    background: var(--bg-tag-hover);
     box-shadow: 0 1px 4px rgba(64, 158, 255, 0.15);
 }
 .param-band-card:hover .param-band-delete {
@@ -134,7 +134,7 @@ onBeforeMount(() => {
     display: flex;
     align-items: center;
     font-size: 14px;
-    color: #909399;
+    color: var(--text-secondary);
     flex-shrink: 0;
 }
 

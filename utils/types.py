@@ -10,6 +10,9 @@ class AppCode(enum.IntEnum):
     TOKEN_EXPIRED = 10002
     PERMISSION_DENIED = 10003
     
+    DATA_NOT_READY = 20001
+    EXECUTE_FAILED = 20002
+    
 
 def app_response(data: t.Optional[t.Any] = None, code: AppCode = AppCode.SUCCESS, msg: t.Optional[str] = None) -> t.Dict[str, t.Any]:
     if code == AppCode.SUCCESS:

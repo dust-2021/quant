@@ -193,6 +193,6 @@ function handleDelete() {
 .param-editor__title {
     font-size: 16px;
     font-weight: 600;
-    color: #303133;
+    color: var(--text-primary);
 }
 </style>

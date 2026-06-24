@@ -8,7 +8,7 @@ import {ref} from 'vue';
     <div style="height: 40px;width:100%">
         header
     </div>
-    <div style="height: calc(100% - 40px);width: 100%;background-color: #f5f7fa;display: flex;flex-direction: row;">
+    <div style="height: calc(100% - 40px);width: 100%;background-color: var(--bg-page);display: flex;flex-direction: row;">
         <div style="width: 68%;height: 100%;display:flex;flex-direction: column;">
             <div style="height: 68%;" class="card"></div>
             <div style="height: 32%;" class="card"></div>
@@ -24,7 +24,7 @@ import {ref} from 'vue';
 .card {
     box-sizing: border-box;
     margin: 10px;
-    background-color: #fff;
+    background-color: var(--bg-card);
     border-radius: 5px;
     padding: 20px;
 }

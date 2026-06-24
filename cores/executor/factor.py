@@ -1,6 +1,7 @@
 import typing as t
 import enum
 import pandas as pd
+from .base import Core
 
 class BaseFactorType(enum.Enum):
     OPEN = 'open'
@@ -11,9 +12,13 @@ class BaseFactorType(enum.Enum):
     
 
 class Factor:
-    def __init__(self, name: str, ) -> None:
+    def __init__(self, name: str, content: str, **kwargs) -> None:
         self.name = name
-        
-    
+        self.mod = Core.load_file(name, content)
+        self.mod.__setattr__('context', kwargs)
+
     def __call__(self, data: pd.DataFrame):
-        pass
+        func: t.Optional[t.Callable] = getattr(self.mod, 'run', None)
+        if func is None:
+            raise NotImplementedError("factor must have a run function")
+        return func(data)

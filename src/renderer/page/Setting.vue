@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ElForm, ElFormItem, ElInput, ElMessage, ElMessageBox, ElScrollbar, ElButton, ElIcon, ElSwitch } from 'element-plus';
+import { ElForm, ElFormItem, ElInput, ElMessage, ElMessageBox, ElScrollbar, ElButton, ElIcon, ElSwitch, ElRow, ElCol } from 'element-plus';
 import { getSetting, setSetting, restartServer } from '../../api/setting';
 import { ref, onBeforeMount } from 'vue';
+
+const dataCenterLink = ref<string>('');
 
 const proxyAddress = ref<string>('');
 const proxyPort = ref<number>(0);
@@ -30,6 +32,8 @@ async function handleRestart() {
 }
 
 onBeforeMount(async () => {
+    dataCenterLink.value = await getSetting('DataCenterLink') || '';
+
     proxyAddress.value = await getSetting('ProxyAddress') || '';
     proxyPort.value = Number(await getSetting('ProxyPort')) || 0;
     availableProxy.value = (await getSetting('AvailableProxy') || 'false') === 'true';
@@ -39,14 +43,27 @@ onBeforeMount(async () => {
 
 <template>
     <div style="padding: 20px;">
-        <ElScrollbar>
+        <ElRow>
+            <ElCol :span="12">
+                <h2>静态设置</h2>
+                <ElForm label-width="120px" label-position="left" style="max-width: 80%;">
+                    <ElFormItem label="数据库链接">
+                        <ElTooltip content="存储历史数据的数据库链接，格式为：dialect+driver://username:password@host:port/database">
+                            <ElInput style="width: 400px;" v-model="dataCenterLink" type="text" :rows="2"/>
+                        </ElTooltip>
+                    </ElFormItem>
+                </ElForm>
+            </ElCol>
+            <ElCol :span="12">
+                <h2>动态设置</h2>
+                <ElScrollbar>
         <ElForm label-width="120px" label-position="left" style="max-width: 80%;">
             <ElFormItem label="网络代理">
                 <ElSwitch v-model="availableProxy" @change="setSetting('AvailableProxy', availableProxy)"></ElSwitch>
             </ElFormItem>
             <ElFormItem label="代理地址">
                 <ElTooltip content="代理地址，用于访问互联网">
-                    <ElInput style="width: 240px;" v-model="proxyAddress" type="text" @change="setSetting('ProxyAddress', proxyAddress)" />
+                    <ElInput style="width: 240px;" v-model="proxyAddress" type="text" @change="setSetting('ProxyAddress', proxyAddress)"  />
                 </ElTooltip>
             </ElFormItem>
             <ElFormItem label="代理端口">
@@ -59,5 +76,8 @@ onBeforeMount(async () => {
             </ElFormItem>
         </ElForm>
     </ElScrollbar>
+            </ElCol>
+        </ElRow>
+        
     </div>
 </template>

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -6,14 +6,33 @@ import os
 
 db_path = os.path.join(os.getcwd(), 'locals', 'quant.db')
 
-async_engine = create_async_engine(f'sqlite+aiosqlite:///{db_path}', echo=True, pool_size=5)
-sync_engine = create_engine(f'sqlite:///{db_path}', echo=True, pool_size=10)
+async_engine = create_async_engine(f'sqlite+aiosqlite:///{db_path}', echo=False, pool_size=2)
+sync_engine = create_engine(f'sqlite:///{db_path}', echo=False, pool_size=10)
 
 base = declarative_base()
 
 async_session = async_sessionmaker(async_engine, expire_on_commit=False)
 
 sync_session = sessionmaker(sync_engine, expire_on_commit=False)
+
 async def init_db():
     async with async_engine.begin() as conn:
         await conn.run_sync(base.metadata.create_all)
+        # 检查默认分组是否存在，不存在则创建
+        result = await conn.execute(
+            text("select id from strategy_group where name = 'default'")
+        )
+        row = result.fetchone()
+        if row is None:
+            await conn.execute(
+                text("insert into strategy_group (name, description) values ('default', '默认分组')")
+            )
+        result = await conn.execute(
+            text("select id from factor_group where name = 'default'")
+        )
+        row = result.fetchone()
+        if row is None:
+            await conn.execute(
+                text("insert into factor_group (name, description) values ('default', '默认分组')")
+            )
+        await conn.commit()
