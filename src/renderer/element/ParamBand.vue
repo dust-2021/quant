@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { PropType, ref, onBeforeMount, computed } from 'vue';
+import { PropType, ref, watch, computed } from 'vue';
 import {ParamType} from '../../store';
 import { ElCol, ElIcon, ElInput, ElInputNumber, ElOption, ElRow, ElSelect, ElSwitch, ElText } from 'element-plus';
 import { Delete } from '@element-plus/icons-vue';
@@ -42,6 +42,20 @@ const param = ref<{name: string, type: ParamType, v: string | number | boolean, 
     name: "", type: ParamType.String, v: "", enum: []
 });
 
+// 监听 props 变化，保持本地状态同步
+watch(
+  () => [props.name, props.type, props.v, props.enums],
+  () => {
+    param.value = {
+      name: props.name,
+      type: props.type,
+      v: props.v,
+      enum: [...(props.enums || [])]
+    };
+  },
+  { immediate: true }
+);
+
 const displayValue = computed(() => {
     switch (param.value.type) {
         case ParamType.Boolean:
@@ -71,14 +85,6 @@ const typePic = computed(() => {
     }
 })
 
-onBeforeMount(() => {
-    param.value = {
-        name: props.name,                       
-        type: props.type,
-        v: props.v,
-        enum: props.enums
-    };
-});
 </script>
 
 <style scoped>

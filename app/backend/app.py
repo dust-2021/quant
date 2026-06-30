@@ -4,6 +4,7 @@ from app.backend.route.base import rules as base_router
 from app.backend.route.factor_api import rules as factor_router
 from app.backend.route.execute import rules as execute_router
 from app.backend.route.data_center import rules as data_center_router
+from app.backend.route.calculator_api import rules as calculator_router
 from config import BASE_PATH
 import os
 
@@ -23,6 +24,7 @@ def generate_app() -> web.Application:
     api.add_routes(factor_router)
     api.add_routes(execute_router)
     api.add_routes(data_center_router)
+    api.add_routes(calculator_router)
     app.add_subapp('/api', api)
 
     app.router.add_static("/static", os.path.join(BASE_PATH, "static"))

@@ -31,17 +31,13 @@
           <el-menu-item index="3-1" @click="router.push({name: 'CreateFactor'})"><el-icon><CustomIcon name="add" /></el-icon><span>添加因子</span></el-menu-item>
           <el-menu-item index="3-2" @click="router.push({name: 'FactorView'})"><el-icon><CustomIcon name="list" /></el-icon><span>因子列表</span></el-menu-item>
         </el-sub-menu>
-        <el-menu-item index="4">
-          <template #title>
+        <el-menu-item index="4" @click="router.push({name: 'Calculator'})">
             <ElIcon><CustomIcon name="calculator"></CustomIcon></ElIcon>
-            <span>算子</span>
-          </template>
+            <template #title><span>算子</span></template>
         </el-menu-item>
         <ElMenuItem index="5" @click="router.push({name: 'DataCenter'})">
-          <template #title>
             <ElIcon><CustomIcon name="data"></CustomIcon></ElIcon>
-            <span>数据中心</span>
-          </template>
+            <template #title><span>数据中心</span></template>
         </ElMenuItem>
         <el-menu-item index="6" @click="router.push({name: 'Setting'})">
           <el-icon><CustomIcon name="setting" /></el-icon>
@@ -65,6 +61,9 @@
     <div class="main-content" :style="{ marginLeft: menuWidth }">
       <router-view name="main" />
     </div>
+
+    <!-- 全局任务面板 -->
+    <TaskPanel />
   </div>
 </template>
 
@@ -74,6 +73,7 @@ import { HomeFilled, Document, Expand, Fold, Eleme } from '@element-plus/icons-v
 import { ElIcon, ElMenuItem } from 'element-plus'
 import { useRouter } from 'vue-router'
 import CustomIcon from './element/CustomIcon.vue'
+import TaskPanel from './element/TaskPanel.vue'
 import { ThemeStore } from '../store'
 
 const router = useRouter()
@@ -147,6 +147,8 @@ onMounted(() => {
 
 .main-content {
   flex: 1;
+  height: 100vh;
+  overflow: hidden;
   transition: margin-left 0.3s ease;
 }
 </style>

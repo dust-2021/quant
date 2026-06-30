@@ -16,7 +16,7 @@ async def index(req: web.Request):
 async def get_config(req: web.Request):
     key = req.match_info.get("key")
     if key is None:
-        return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="key is required"), status=400)
+        return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="key is required"))
     value = await Config.get(key)
     return web.json_response(app_response(data=value))
 
@@ -27,7 +27,7 @@ async def get_config(req: web.Request):
 })
 async def set_config(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None):
     if data is None:
-        return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="invalid json body"), status=400)
+        return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="invalid json body"))
     await Config.set(data["key"], data["value"])
     return web.json_response(app_response(msg="config updated"))
 

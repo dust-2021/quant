@@ -48,13 +48,18 @@ const routes: RouteRecordRaw[] = [
     },
     {
         path: '/calculator',
-        components: {},
+        components: {main: () => import("./renderer/page/Calculator.vue")},
         name: 'Calculator'
     },
     {
         path: '/dataCenter',
         components: {main: () => import("./renderer/page/DataCenter.vue")},
         name: 'DataCenter'
+    },
+    {
+        path: '/strategy/result',
+        components: {main: () => import("./renderer/page/StrategyResult.vue")},
+        name: 'StrategyResult',
     }
 ];
 const router = createRouter({

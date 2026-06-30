@@ -8,7 +8,7 @@ class Config:
     """
     Port = 5000
     BaseLog = 'INFO'
-    WebLog = 'WARNING'
+    WebLog = 'INFO'
     SQLAlchemyLog = "WARNING"
     Auth = False
     DataCenterLink = "postgresql+asyncpg://postgres:064735@127.0.0.1:5432/data_center"

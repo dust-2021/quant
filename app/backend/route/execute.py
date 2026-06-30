@@ -57,9 +57,10 @@ async def get_runner_list(request: web.Request):
         runners = await s.execute(select(CalculatorModel.name))
         runners = runners.scalars().all()
         await s.commit()
-    res = set(runners) 
+    res = set(runners)
     res.add("default")
     return web.json_response(app_response(data=list(res)))
+
 
 rules = [
     web.RouteDef("POST", "/execute", execute_strategy, {}),

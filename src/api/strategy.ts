@@ -71,10 +71,10 @@ export async function executeStrategy(params: {
     runner_name?: string;
     multi?: boolean;
     multi_param?: string;
-    multi_values?: string[];
+    multi_values?: (string | number | boolean)[];
     multi_expression?: string;
 }) {
-    return await fetch<{ result_id: string | string[] }>('/api/strategy/execute', 'POST', params);
+    return await fetch<string | string[]>('/api/strategy/execute', 'POST', params);
 }
 
 /** 获取回测执行器列表 */

@@ -218,7 +218,7 @@ watch(() => props.uuid, async (newUuid) => {
                     <div style="height: calc(100% - 60px);background-color: var(--bg-card);border-radius: 5px; padding: 10px;box-sizing: border-box;margin-bottom: 10px;">
                         <div style="height: 30px;width: 100%;"><ElButton style="border: none;" @click="addParam">添加参数</ElButton></div>
                         <div style="height: calc(100% - 30px); display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; align-content: flex-start; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;">
-                            <ParamBand :name="item.name" :type="item.type" :v="item.v" :change-type="true" :on-delete="deleteParam" :on-click="editParam" v-for="item in factor?.params" />
+                            <ParamBand :key="item.name" :name="item.name" :type="item.type" :v="item.v" :change-type="true" :on-delete="deleteParam" :on-click="editParam" v-for="item in factor?.params" />
                         </div>
                     </div>
                     <div style="height: 60px; padding-top: 5px;box-sizing: border-box;">

@@ -52,3 +52,11 @@ export async function deleteScript(name: string): Promise<boolean> {
   ElMessage.success(resp.msg || '脚本已删除')
   return true
 }
+
+export async function executeScript(name: string, params?: Record<string, any>): Promise<{ data: any; error: string | null }> {
+  const resp = await fetch('/api/data_center/script/execute', 'POST', { name, params })
+  if (resp === null || resp.code !== 0) {
+    return { data: null, error: resp?.msg || '执行脚本失败' }
+  }
+  return { data: resp.data, error: null }
+}

@@ -1,4 +1,13 @@
-from sqlalchemy import Column, Integer, String, inspect, select, text, and_
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    inspect,
+    select,
+    text,
+    and_,
+    UniqueConstraint,
+)
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncEngine,
@@ -11,6 +20,7 @@ import pandas as pd
 from .model import Config as ConfigModel
 from enum import Enum
 import importlib.util
+import inspect as insp
 
 
 class DataPeriod(Enum):
@@ -84,46 +94,51 @@ class Script(base):
             exec(t.cast(str, script.content), mod.__dict__)
         except Exception as e:
             raise RuntimeError(f"执行脚本 '{name}' 时出错: {e}") from e
-        func: t.Optional[t.Callable] = getattr(mod, "run", None)
+        func: t.Optional[t.Callable[[], t.Union[None, t.Awaitable[None]]]] = getattr(mod, "run", None)
         if func is None:
             raise NotImplementedError(f"脚本 '{name}' 必须定义 run 函数")
-        return func()
+        result = func()
+        return await result if insp.isawaitable(result) else result
 
 
 class Target(base):
     __tablename__ = "target"
 
     id = Column(Integer, primary_key=True)
-    code = Column(
-        String(255), nullable=False, index=True, unique=True, comment="标的唯一识别"
-    )
+    code = Column(String(255), nullable=False, index=True, comment="标的唯一识别")
     exchange = Column(String(255), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("code", "exchange", name="code_exchange_unique_idx"),
+    )
 
     def src_table(self, p: DataPeriod = DataPeriod.HOUR) -> str:
         return f"DATA_{self.exchange}_{self.code}_{p.name}"
-    
-    
+
     @staticmethod
     async def check_target_table(name: str):
         """检查数据表是否存在，不存在则自动建表。
-        
-        表字段:
-            symbol (VARCHAR), open_time (BIGINT), open/high/low/close/volume (DECIMAL(20,8)),
+
+        表字段 open_time (BIGINT), open/high/low/close/volume (DECIMAL(20,8)),
             close_time (BIGINT), quote_asset_volume (DECIMAL(20,8)),
             number_of_trades (INT), taker_buy_base_asset_volume (DECIMAL(20,8)),
             taker_buy_quote_asset_volume (DECIMAL(20,8)), ignore (INT)
         """
         if _session is None:
-            raise ValueError('数据中心未连接')
+            raise ValueError("数据中心未连接")
         if _engine is None:
-            raise ValueError('数据中心未连接')
-        inspector = inspect(_engine.sync_engine)
-        if inspector.has_table(name):
+            raise ValueError("数据中心未连接")
+        # 通过 run_sync 使用同步 inspector，避免 greenlet 上下文缺失错误
+        async with _engine.connect() as conn:
+            has = await conn.run_sync(
+                lambda sync_conn: inspect(sync_conn).has_table(name)
+            )
+        if has:
             return
         ddl = text(f"""
             CREATE TABLE "{name}" (
-                symbol VARCHAR(255) NOT NULL,
-                open_time BIGINT NOT NULL,
+                id SERIAL PRIMARY KEY,
+                open_time BIGINT NOT NULL UNIQUE,
                 open DECIMAL(20,8) DEFAULT 0,
                 high DECIMAL(20,8) DEFAULT 0,
                 low DECIMAL(20,8) DEFAULT 0,
@@ -139,6 +154,11 @@ class Target(base):
         """)
         async with _engine.begin() as conn:
             await conn.execute(ddl)
+            await conn.execute(
+                text(
+                    f'CREATE INDEX IF NOT EXISTS idx_{name}_open_time ON "{name}" (open_time);'
+                )
+            )
 
 
 # ==================
@@ -149,7 +169,7 @@ async def init_data_center():
     global _engine, _session
     db_path = await ConfigModel.get("DataCenterLink")
     if not db_path:
-        raise ValueError("DataCenterLink 未配置")
+        return
     _engine = create_async_engine(str(db_path), pool_size=10)
     _session = async_sessionmaker(bind=_engine)
     async with _engine.begin() as conn:
@@ -185,7 +205,6 @@ async def load_data(
     target_s: t.Set[str] = set(target)
     if _engine is None:
         raise ValueError("数据中心未链接")
-    inspector = inspect(_engine.sync_engine)
     async with get_session()() as session:
         resp = (
             await session.execute(
@@ -198,23 +217,28 @@ async def load_data(
             )
             if len(target) != 0
             else await session.execute(
+                # 全量选取
                 select(Target).filter(
                     Target.exchange == await ConfigModel.get("Exchange")
                 )
             )
         )
-        tables: t.List[str] = [x[0].src_table(p) for x in resp.all()]
+        code_tables: t.List[t.Tuple[str, str]] = [(t.cast(str, x.code), x.src_table(p)) for x in resp.scalars().all()]
 
         # 检查每个表是否存在（兼容 SQLite / PostgreSQL / MySQL 等）
-        for table_name in tables:
-            if not inspector.has_table(table_name):
-                raise ValueError(f"数据表 '{table_name}' 在数据中心中不存在")
+        async with _engine.connect() as conn:
+            for _, table_name in code_tables:
+                has = await conn.run_sync(
+                    lambda sync_conn, tn=table_name: inspect(sync_conn).has_table(tn)
+                )
+                if not has:
+                    raise ValueError(f"数据表 '{table_name}' 在数据中心中不存在")
 
         # 查询各表数据并拼接
         frames: t.List[pd.DataFrame] = []
-        for table_name in tables:
+        for code, table_name in code_tables:
             # 使用引擎方言正确引用表名，兼容不同数据库
-            query = f"SELECT * FROM {table_name} WHERE time >= :start_time AND time <= :end_time"
+            query = f'SELECT * FROM "{table_name}" WHERE open_time >= :start_time AND open_time <= :end_time'
             result = await session.execute(
                 text(query),
                 {"start_time": s, "end_time": e},
@@ -222,6 +246,16 @@ async def load_data(
             rows = result.all()
             if rows:
                 df = pd.DataFrame(rows, columns=list(result.keys()))
+                # 将 DECIMAL 列转为 float，方便 DataFrame 数值计算
+                decimal_cols = [
+                    "open", "high", "low", "close", "volume",
+                    "quote_asset_volume", "taker_buy_base_asset_volume",
+                    "taker_buy_quote_asset_volume",
+                ]
+                for col in decimal_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
+                df['code'] = code
                 frames.append(df)
 
         if not frames:

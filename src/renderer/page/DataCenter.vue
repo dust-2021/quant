@@ -2,7 +2,7 @@
 import { ref, computed, onBeforeMount } from 'vue'
 import { ElCard, ElTable, ElTableColumn, ElTag, ElButton, ElMessage, ElScrollbar, ElEmpty, ElDialog, ElForm, ElFormItem, ElInput, ElMessageBox } from 'element-plus'
 import { Monaco } from 'vue-shiki-monaco'
-import { getExchanges, getScripts, setExchangeConfig, saveScript, deleteScript } from '../../api/dataCenter'
+import { getExchanges, getScripts, setExchangeConfig, saveScript, deleteScript, executeScript } from '../../api/dataCenter'
 import { getSetting } from '../../api/setting'
 import { ThemeStore } from '../../store'
 import type { ExchangeItem, ScriptItem } from '../../api/dataCenter'
@@ -117,6 +117,26 @@ async function handleDeleteScript(script: ScriptItem) {
   }
 }
 
+// ===== 执行脚本 =====
+const executing = ref<string | null>(null)
+const showResultDialog = ref(false)
+const executeResult = ref<any>(null)
+const executeResultName = ref('')
+const executeError = ref<string | null>(null)
+
+async function handleExecuteScript(script: ScriptItem) {
+  executing.value = script.name
+  try {
+    const { data, error } = await executeScript(script.name)
+    executeResult.value = data
+    executeError.value = error
+    executeResultName.value = script.name
+    showResultDialog.value = true
+  } finally {
+    executing.value = null
+  }
+}
+
 onBeforeMount(async () => {
   await Promise.all([refreshExchanges(), refreshScripts()])
 })
@@ -175,8 +195,7 @@ onBeforeMount(async () => {
           v-if="scripts.length > 0"
           :data="scripts"
           stripe
-          style="width: 100%"
-          max-height="400"
+          style="width: 100%; height: 100%;"
         >
           <ElTableColumn prop="id" label="ID" width="80" align="center" />
           <ElTableColumn prop="name" label="脚本名称" min-width="180" />
@@ -185,9 +204,10 @@ onBeforeMount(async () => {
               <div class="script-content" :title="row.content">{{ row.content }}</div>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="操作" width="160" align="center" fixed="right">
+          <ElTableColumn label="操作" width="200" align="center" fixed="right">
             <template #default="{ row }">
               <ElButton size="small" type="primary" link @click="openEditDialog(row)">编辑</ElButton>
+              <ElButton size="small" type="success" link @click="handleExecuteScript(row)" :loading="executing === row.name">执行</ElButton>
               <ElButton size="small" type="danger" link @click="handleDeleteScript(row)">删除</ElButton>
             </template>
           </ElTableColumn>
@@ -229,6 +249,20 @@ onBeforeMount(async () => {
         </span>
       </template>
     </ElDialog>
+
+    <!-- 执行结果弹窗 -->
+    <ElDialog
+      v-model="showResultDialog"
+      :title="`执行结果 - ${executeResultName}`"
+      width="700px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="executeError" class="result-error">{{ executeError }}</div>
+      <pre v-else class="result-content">{{ JSON.stringify(executeResult, null, 2) }}</pre>
+      <template #footer>
+        <ElButton @click="showResultDialog = false">关闭</ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
@@ -237,10 +271,11 @@ onBeforeMount(async () => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px;
   box-sizing: border-box;
   background-color: var(--bg-page);
+  overflow: hidden;
 }
 
 .section {
@@ -248,23 +283,27 @@ onBeforeMount(async () => {
   flex-direction: column;
   background-color: var(--bg-card);
   border-radius: 8px;
-  padding: 16px;
+  padding: 12px;
+  min-height: 0;
   overflow: hidden;
 }
 
 .exchange-section {
-  flex: 0 0 35%;
+  flex: 0 0 auto;
+  max-height: 35%;
 }
 
 .script-section {
   flex: 1;
+  min-height: 0;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .section-header h3 {
@@ -282,8 +321,13 @@ onBeforeMount(async () => {
 .exchange-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 4px 0;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.section :deep(.el-scrollbar) {
+  flex: 1;
+  min-height: 0;
 }
 
 .exchange-card {
@@ -336,5 +380,29 @@ onBeforeMount(async () => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.result-content {
+  background-color: var(--el-fill-color-light);
+  border-radius: 4px;
+  padding: 12px;
+  max-height: 400px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  margin: 0;
+}
+
+.result-error {
+  background-color: var(--el-color-danger-light-9);
+  border: 1px solid var(--el-color-danger-light-5);
+  border-radius: 4px;
+  padding: 12px 16px;
+  color: var(--el-color-danger);
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

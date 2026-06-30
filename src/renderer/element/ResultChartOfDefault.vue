@@ -1,0 +1,246 @@
+<script lang="ts" setup>
+import { ref, nextTick, onBeforeUnmount, watch } from 'vue'
+import { ElButton, ElEmpty } from 'element-plus'
+import * as echarts from 'echarts'
+
+const props = defineProps<{
+  dataJson: string
+}>()
+
+const MAX_CHART_ROWS = 10000
+const chartRef = ref<HTMLDivElement | null>(null)
+let chartInstance: echarts.ECharts | null = null
+const chartReady = ref(false)
+const chartDataTooLarge = ref(false)
+const colorReversed = ref(false)
+const candlestickData = ref<any[]>([])
+const fundingData = ref<any[]>([])
+const drawdownData = ref<any[]>([])
+const volumeData = ref<any[]>([])
+const dataCount = ref(0)
+const periodMs = ref(3600000) // 默认小时
+
+function parseChartData() {
+  candlestickData.value = []
+  fundingData.value = []
+  drawdownData.value = []
+  volumeData.value = []
+  dataCount.value = 0
+  chartDataTooLarge.value = false
+  periodMs.value = 3600000
+  if (!props.dataJson) return
+  try {
+    const arr = JSON.parse(props.dataJson)
+    if (!Array.isArray(arr)) return
+    if (arr.length > MAX_CHART_ROWS) {
+      chartDataTooLarge.value = true
+      return
+    }
+    dataCount.value = arr.length
+    if (arr.length >= 2) {
+      periodMs.value = arr[1].open_time - arr[0].open_time
+    }
+    for (const row of arr) {
+      candlestickData.value.push([row.open_time, row.open, row.close, row.low, row.high])
+      fundingData.value.push(row.__funding ?? null)
+      drawdownData.value.push(row.__drawdown ?? null)
+      volumeData.value.push(row.quote_asset_volume ?? 0)
+    }
+  } catch { /* ignore */ }
+}
+
+async function doRenderChart() {
+  if (!candlestickData.value.length) return
+  chartReady.value = true
+  await nextTick()
+  if (!chartRef.value) return
+  disposeChart()
+  chartInstance = echarts.init(chartRef.value)
+  const upColor = colorReversed.value ? '#26a69a' : '#ef5350'
+  const downColor = colorReversed.value ? '#ef5350' : '#26a69a'
+  chartInstance.setOption({
+    legend: {
+      data: ['K线', '资金曲线', '回撤'],
+      top: 0,
+      selected: { '资金曲线': false, '回撤': false },
+    },
+    grid: [
+      { left: 60, right: 120, top: 30, bottom: '38%' },
+      { left: 60, right: 120, top: '75%', bottom: 0 },
+    ],
+    xAxis: [
+      {
+        type: 'category',
+        gridIndex: 0,
+        data: candlestickData.value.map((item: any[]) => {
+          const date = new Date(item[0])
+          const pad = (n: number) => String(n).padStart(2, '0')
+          if (periodMs.value < 60000) {
+            return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+          }
+          if (periodMs.value < 3600000) {
+            return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+          }
+          if (periodMs.value < 86400000) {
+            return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:00`
+          }
+          return `${date.getMonth() + 1}/${date.getDate()}`
+        }),
+        axisLabel: { fontSize: 10 },
+      },
+      {
+        type: 'category',
+        gridIndex: 1,
+        data: candlestickData.value.map(() => ''),
+        axisLabel: { show: false },
+        axisTick: { show: false },
+        axisLine: { show: false },
+      },
+    ],
+    yAxis: [
+      { type: 'value', scale: true, position: 'left', name: '价格', gridIndex: 0 },
+      { type: 'value', scale: true, position: 'right', name: '资金', splitLine: { show: false }, gridIndex: 0 },
+      { type: 'value', scale: true, position: 'right', offset: 60, name: '回撤', splitLine: { show: false }, axisLabel: { formatter: function(v: number) { return (v * 100).toFixed(0) + '%' } }, gridIndex: 0 },
+      { type: 'value', scale: true, position: 'left', name: '交易额', splitLine: { show: false }, axisLabel: { fontSize: 10 }, gridIndex: 1 },
+    ],
+    series: [
+      {
+        name: 'K线',
+        type: 'candlestick',
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        data: candlestickData.value.map((d: any[]) => d.slice(1)),
+        itemStyle: {
+          color: upColor,
+          color0: downColor,
+          borderColor: upColor,
+          borderColor0: downColor,
+        },
+      },
+      {
+        name: '资金曲线',
+        type: 'line',
+        xAxisIndex: 0,
+        yAxisIndex: 1,
+        data: fundingData.value,
+        smooth: true,
+        symbol: 'none',
+        connectNulls: true,
+        lineStyle: { color: '#409eff', width: 1.5 },
+      },
+      {
+        name: '回撤',
+        type: 'line',
+        xAxisIndex: 0,
+        yAxisIndex: 2,
+        data: drawdownData.value,
+        smooth: true,
+        symbol: 'none',
+        connectNulls: true,
+        lineStyle: { color: '#e6a23c', width: 1.5 },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(230, 162, 60, 0.25)' },
+            { offset: 1, color: 'rgba(230, 162, 60, 0.02)' },
+          ]),
+        },
+      },
+      {
+        name: '交易额',
+        type: 'bar',
+        xAxisIndex: 1,
+        yAxisIndex: 3,
+        data: volumeData.value,
+        itemStyle: {
+          color: function (params: any) {
+            const idx = params.dataIndex
+            const row = candlestickData.value[idx]
+            if (!row) return downColor
+            return row[2] >= row[1] ? upColor : downColor
+          },
+        },
+      },
+    ],
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0, 1] },
+    ],
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+    },
+  }, true)
+}
+
+function disposeChart() {
+  chartInstance?.dispose()
+  chartInstance = null
+}
+
+function toggleColor() {
+  colorReversed.value = !colorReversed.value
+  if (chartReady.value) {
+    doRenderChart()
+  }
+}
+
+onBeforeUnmount(() => {
+  disposeChart()
+})
+
+// 初始解析
+parseChartData()
+
+// dataJson 变化时重新解析
+watch(() => props.dataJson, () => {
+  chartReady.value = false
+  disposeChart()
+  parseChartData()
+})
+</script>
+
+<template>
+  <div class="chart-wrapper">
+    <template v-if="chartDataTooLarge">
+      <ElEmpty description="数据量过大，不绘制图表" />
+    </template>
+    <template v-else-if="!chartReady && candlestickData.length">
+      <div class="chart-placeholder">
+        <p>共 {{ dataCount }} 条 K 线数据</p>
+        <div class="chart-actions">
+          <ElButton type="primary" @click="doRenderChart">渲染图表</ElButton>
+          <ElButton @click="toggleColor">{{ colorReversed ? '红跌绿涨' : '红涨绿跌' }}</ElButton>
+        </div>
+      </div>
+    </template>
+    <template v-else-if="!candlestickData.length">
+      <ElEmpty description="无图表数据" />
+    </template>
+    <div v-show="chartReady" ref="chartRef" class="chart-container" />
+  </div>
+</template>
+
+<style scoped>
+.chart-wrapper {
+  width: 100%;
+}
+
+.chart-container {
+  width: 100%;
+  height: 550px;
+}
+
+.chart-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  gap: 12px;
+  color: var(--text-secondary);
+}
+
+.chart-actions {
+  display: flex;
+  gap: 8px;
+}
+</style>

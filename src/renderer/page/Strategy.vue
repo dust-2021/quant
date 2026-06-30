@@ -9,6 +9,7 @@ import {getFactorList, getFactorGroup} from '../../api/factor';
 import ParamBand from '../element/ParamBand.vue';
 import ParamEditor from '../element/ParamEditor.vue';
 import CustomIcon from '../element/CustomIcon.vue';
+import { StrategyResultStore } from '../../store';
 import { info } from 'node:console';
 
 const router = useRouter();
@@ -23,7 +24,12 @@ const props = defineProps({
 const strategy = ref<Strategy>({
     uuid: '',
     name: 'unamed',
-    params: [],
+    params: [
+        // 杠杆参数
+        {name: 'leverage', type: ParamType.Number, v: 1, enum: []},
+        {name: 'premium', type: ParamType.Number, v: 0.001, enum: []},
+        {name: 'signalName', type: ParamType.String, v: 'signal', enum: []}
+    ],
     version: '0.0.0',
     factors: [],
     description: '',
@@ -182,7 +188,7 @@ interface RunForm {
     runner_name: string;
     multi: boolean;
     multi_param: string;
-    multi_values: string[];
+    multi_values: (string | number | boolean)[];
     targetInput: string;
     multiValueInput: string;
     multiExpressionInput: string;
@@ -223,12 +229,26 @@ function removeTarget(idx: number) {
 }
 
 function addMultiValue() {
-    const val = runForm.value.multiValueInput.trim();
-    if (!val) return;
+    const raw = runForm.value.multiValueInput.trim();
+    if (!raw) return;
+    const param = strategy.value?.params.find(p => p.name === runForm.value.multi_param);
+    const val = convertMultiValue(raw, param?.type);
     if (!runForm.value.multi_values.includes(val)) {
         runForm.value.multi_values.push(val);
     }
     runForm.value.multiValueInput = '';
+}
+
+function convertMultiValue(raw: string, type?: ParamType): string | number | boolean {
+    if (!type) return raw;
+    switch (type) {
+        case ParamType.Number:
+            return Number(raw);
+        case ParamType.Boolean:
+            return raw.toLowerCase() === 'true' || raw === '1';
+        default:
+            return raw;
+    }
 }
 
 function removeMultiValue(idx: number) {
@@ -240,8 +260,8 @@ async function confirmRun() {
         ElMessage.warning('请选择起止时间');
         return;
     }
-    const startTime = Math.floor(new Date(runForm.value.start_time).getTime() / 1000);
-    const endTime = Math.floor(new Date(runForm.value.end_time).getTime() / 1000);
+    const startTime = Math.floor(new Date(runForm.value.start_time).getTime());
+    const endTime = Math.floor(new Date(runForm.value.end_time).getTime());
     if (startTime >= endTime) {
         ElMessage.warning('起始时间必须早于结束时间');
         return;
@@ -257,7 +277,7 @@ async function confirmRun() {
         runner_name?: string;
         multi?: boolean;
         multi_param?: string;
-        multi_values?: string[];
+        multi_values?: (string | number | boolean)[];
         multi_expression?: string;
     } = {
         uuid: strategy.value.uuid,
@@ -280,6 +300,12 @@ async function confirmRun() {
 
     const resp = await executeStrategy(payload);
     if (resp.code === 0) {
+        // 注册任务到全局任务面板
+        const taskStore = StrategyResultStore();
+        const resultIds = resp.data;
+        if (!resultIds) return;
+        taskStore.addTasks(resultIds, strategy.value?.name || '', runForm.value.runner_name, runForm.value.multi_param, runForm.value.multi_values);
+
         ElMessage.success('策略已提交运行');
         showRunDialog.value = false;
     } else {
@@ -502,7 +528,7 @@ watch(() => props.uuid, async (newUuid) => {
                     <div style="height: calc(60% - 70px);background-color: var(--bg-card);border-radius: 5px; padding: 10px;box-sizing: border-box;margin-bottom: 10px;">
                         <div style="height: 30px;width: 100%;"><ElButton style="border: none;" @click="addParam">添加参数</ElButton></div>
                         <div style="height: calc(100% - 30px); display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; align-content: flex-start; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;">
-                            <ParamBand :name="item.name" :type="item.type" :v="item.v" :change-type="true" :on-delete="deleteParam" :on-click="editParam" v-for="item in strategy?.params" />
+                            <ParamBand :key="item.name" :name="item.name" :type="item.type" :v="item.v" :change-type="true" :on-delete="deleteParam" :on-click="editParam" v-for="item in strategy?.params" />
                         </div>
                     </div>
                     <div style="height: 40%;background-color: var(--bg-card);border-radius: 5px; padding: 10px;box-sizing: border-box;">
@@ -695,7 +721,7 @@ watch(() => props.uuid, async (newUuid) => {
                         <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
                             <ElTag
                                 v-for="(v, idx) in runForm.multi_values"
-                                :key="v"
+                                :key="idx"
                                 closable
                                 size="small"
                                 type="warning"

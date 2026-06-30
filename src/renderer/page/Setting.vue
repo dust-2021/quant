@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { ElForm, ElFormItem, ElInput, ElMessage, ElMessageBox, ElScrollbar, ElButton, ElIcon, ElSwitch, ElRow, ElCol } from 'element-plus';
+import { ElForm, ElFormItem, ElInput, ElMessage, ElMessageBox, ElScrollbar, ElButton, ElIcon, ElSwitch, ElRow, ElCol, ElSelect, ElOption, ElTooltip } from 'element-plus';
 import { getSetting, setSetting, restartServer } from '../../api/setting';
 import { ref, onBeforeMount } from 'vue';
 
 const dataCenterLink = ref<string>('');
+
+const baseLog = ref<string>('INFO');
+const webLog = ref<string>('INFO');
+const sqlalchemyLog = ref<string>('WARNING');
+const auth = ref<boolean>(false);
+
+const logLevels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
 
 const proxyAddress = ref<string>('');
 const proxyPort = ref<number>(0);
@@ -34,6 +41,11 @@ async function handleRestart() {
 onBeforeMount(async () => {
     dataCenterLink.value = await getSetting('DataCenterLink') || '';
 
+    baseLog.value = await getSetting('BaseLog') || 'INFO';
+    webLog.value = await getSetting('WebLog') || 'INFO';
+    sqlalchemyLog.value = await getSetting('SQLAlchemyLog') || 'WARNING';
+    auth.value = (await getSetting('Auth') || 'false') === 'true';
+
     proxyAddress.value = await getSetting('ProxyAddress') || '';
     proxyPort.value = Number(await getSetting('ProxyPort')) || 0;
     availableProxy.value = (await getSetting('AvailableProxy') || 'false') === 'true';
@@ -49,8 +61,26 @@ onBeforeMount(async () => {
                 <ElForm label-width="120px" label-position="left" style="max-width: 80%;">
                     <ElFormItem label="数据库链接">
                         <ElTooltip content="存储历史数据的数据库链接，格式为：dialect+driver://username:password@host:port/database">
-                            <ElInput style="width: 400px;" v-model="dataCenterLink" type="text" :rows="2"/>
+                            <ElInput style="width: 400px;" v-model="dataCenterLink" type="text" :rows="2" @change="setSetting('DataCenterLink', dataCenterLink)"/>
                         </ElTooltip>
+                    </ElFormItem>
+                    <ElFormItem label="基础日志">
+                        <ElSelect v-model="baseLog" style="width: 140px;" @change="setSetting('BaseLog', baseLog)">
+                            <ElOption v-for="lv in logLevels" :key="lv" :label="lv" :value="lv" />
+                        </ElSelect>
+                    </ElFormItem>
+                    <ElFormItem label="Web 日志">
+                        <ElSelect v-model="webLog" style="width: 140px;" @change="setSetting('WebLog', webLog)">
+                            <ElOption v-for="lv in logLevels" :key="lv" :label="lv" :value="lv" />
+                        </ElSelect>
+                    </ElFormItem>
+                    <ElFormItem label="SQL 日志">
+                        <ElSelect v-model="sqlalchemyLog" style="width: 140px;" @change="setSetting('SQLAlchemyLog', sqlalchemyLog)">
+                            <ElOption v-for="lv in logLevels" :key="lv" :label="lv" :value="lv" />
+                        </ElSelect>
+                    </ElFormItem>
+                    <ElFormItem label="权限认证">
+                        <ElSwitch v-model="auth" @change="setSetting('Auth', auth)"></ElSwitch>
                     </ElFormItem>
                 </ElForm>
             </ElCol>

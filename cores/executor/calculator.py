@@ -1,10 +1,11 @@
 from functools import partial
 import typing as t
 import uuid
+import traceback
 
 import loguru
 
-from cores.backtest.runner_loader import get_runner
+from cores.backtest.runner_loader import get_runner, Runer_T
 from .base import Core
 import pandas as pd
 from database.data_center import DataPeriod, load_data
@@ -13,7 +14,8 @@ from utils.cache import TaskCache
 def _run_task(
     src_raw: t.Dict[str, t.Any],
     data: pd.DataFrame,
-    multi: bool, multi_param: str, runner_name: str,
+    multi: bool, multi_param: str, runner: Runer_T,
+    ctx: t.Dict[str, t.Any],
     uuid: str, v: t.Any = None,
 ) -> None:
     """
@@ -28,6 +30,7 @@ def _run_task(
     @param uuid:    任务id
     @param v:       multi_param 的值，仅在 multi 为 True 时使用
     """
+    pd.set_option('mode.chained_assignment', None)
     if data.empty:
         TaskCache.set_result(uuid, 'data empty', False)
         loguru.logger.info(f'task {uuid} droped by empty data')
@@ -40,9 +43,7 @@ def _run_task(
         if strategy_mod is None:
             raise ValueError(f"failed to load strategy module: {strategy_name}")
         strategy_params: t.List[t.Dict[str, t.Any]] = src_raw['strategy']['params']
-
-        ctx: t.Dict[str, t.Any] = dict()
-
+            
         factors_raw: t.List[t.Dict[str, t.Any]] = src_raw['factors']
         loguru.logger.info(f"start executing strategy {strategy_name} with multi_param={multi_param}={v}, task id: {uuid}, factors: {[x['name'] for x in factors_raw]}")
         for f_raw in factors_raw:
@@ -62,11 +63,13 @@ def _run_task(
         strategy_mod.__setattr__('params', {x['name']: x['v'] for x in strategy_params})
         strategy_mod.__setattr__('context', ctx)
         if multi:
-            strategy_mod.__getattr__('params')[multi_param] = v
+            strategy_mod.params[multi_param] = v
         strategy_func(data)
-        result = Calculator._backtest(ctx, getattr(strategy_mod, 'params', dict()), runner_name, data)
+        
+        # backtest
+        result = runner(data, ctx, getattr(strategy_mod, 'params', dict()), multi)
     except Exception as e:
-        TaskCache.set_result(uuid, e.__str__(), False)
+        TaskCache.set_result(uuid, traceback.format_exc(), False)
         loguru.logger.info(f'task {uuid} fialed: {e.__str__()}')
     else:
         TaskCache.set_result(uuid, result)
@@ -95,8 +98,11 @@ class Calculator:
          返回值：单个 task_id（multi=False）或 task_id 列表（multi=True）
         """
         # === 主进程预处理：策略参数 + 行情数据（只做一次，worker 共享） ===
-        src_raw = Core.prepare_raw(strategy_uuid)
+        src_raw = await Core.prepare_raw(strategy_uuid)
         data = await load_data(start_time, end_time, target if target is not None else [], period)
+        runner: t.Optional[Runer_T] = await get_runner(runner_name)
+        if runner is None:
+            raise ValueError(f'加载回测执行器失败：{runner_name}')
 
         # 推导式优先级高于直接传值
         if multi and multi_expression:
@@ -112,23 +118,15 @@ class Calculator:
             except Exception as e:
                 raise ValueError(f"推导式解析失败: {e}") from e
 
+        ctx = {'start_time': start_time, 'end_time': end_time, 'target': target, 'period': period.value}
         if multi:
             ids = [str(uuid.uuid4()) for _ in multi_values]
-            task_func = partial(_run_task, src_raw, data, multi, multi_param, runner_name)
+            task_func = partial(_run_task, src_raw, data, multi, multi_param, runner, ctx)
             Core.map_task(task_func, ids, multi_values)
             return ids
         else:
             task_id = str(uuid.uuid4())
-            Core.submit_task(_run_task, src_raw, data, False, multi_param, runner_name, task_id)
+            Core.submit_task(_run_task, src_raw, data, False, multi_param, runner, ctx, task_id)
             return task_id
-    
-    @staticmethod
-    def _backtest(ctx: dict, params: dict, runner_name: str = "default", data: pd.DataFrame = pd.DataFrame() ) -> t.Any:
-        if data.empty:
-            raise ValueError("回测数据不能为空")
-        runner = get_runner(runner_name)
-        if runner is None:
-            raise ModuleNotFoundError('runner not found')
-        return runner(data, ctx, params)
     
     

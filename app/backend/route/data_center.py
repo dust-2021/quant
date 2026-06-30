@@ -17,7 +17,7 @@ async def get_exchanges(req: web.Request) -> web.Response:
         )
     except RuntimeError as e:
         return web.json_response(
-            app_response(code=AppCode.DATA_NOT_READY, msg=str(e)), status=503
+            app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
 
 
@@ -37,7 +37,7 @@ async def get_scripts(req: web.Request) -> web.Response:
         )
     except RuntimeError as e:
         return web.json_response(
-            app_response(code=AppCode.DATA_NOT_READY, msg=str(e)), status=503
+            app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
 
 
@@ -46,7 +46,7 @@ async def create_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] =
     """新增或更新脚本"""
     if data is None:
         return web.json_response(
-            app_response(code=AppCode.DATA_INVALID, msg="缺少请求体"), status=400
+            app_response(code=AppCode.DATA_INVALID, msg="缺少请求体")
         )
     try:
         async with get_session()() as s:
@@ -61,7 +61,7 @@ async def create_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] =
         return web.json_response(app_response(msg="脚本已保存"))
     except RuntimeError as e:
         return web.json_response(
-            app_response(code=AppCode.DATA_NOT_READY, msg=str(e)), status=503
+            app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
 
 
@@ -70,24 +70,16 @@ async def execute_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] 
     """加载并执行数据中心脚本"""
     if data is None:
         return web.json_response(
-            app_response(code=AppCode.DATA_INVALID, msg="缺少请求体"), status=400
+            app_response(code=AppCode.DATA_INVALID, msg="缺少请求体")
         )
     try:
         result = await Script.load_and_execute(
             data["name"], **(data.get("params") or {})
         )
         return web.json_response(app_response(data=result))
-    except ValueError as e:
+    except Exception as e:
         return web.json_response(
-            app_response(code=AppCode.NOT_FOUND, msg=str(e)), status=404
-        )
-    except NotImplementedError as e:
-        return web.json_response(
-            app_response(code=AppCode.DATA_INVALID, msg=str(e)), status=400
-        )
-    except RuntimeError as e:
-        return web.json_response(
-            app_response(code=AppCode.EXECUTE_FAILED, msg=str(e)), status=500
+            app_response(code=AppCode.EXECUTE_FAILED, msg=str(e))
         )
 
 
@@ -96,7 +88,7 @@ async def delete_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] =
     """删除脚本"""
     if data is None:
         return web.json_response(
-            app_response(code=AppCode.DATA_INVALID, msg="缺少请求体"), status=400
+            app_response(code=AppCode.DATA_INVALID, msg="缺少请求体")
         )
     name = data["name"]
     try:
@@ -105,14 +97,14 @@ async def delete_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] =
             row = result.first()
             if row is None:
                 return web.json_response(
-                    app_response(code=AppCode.NOT_FOUND, msg=f"脚本 '{name}' 不存在"), status=404
+                    app_response(code=AppCode.NOT_FOUND, msg=f"脚本 '{name}' 不存在")
                 )
             await s.delete(row[0])
             await s.commit()
         return web.json_response(app_response(msg=f"脚本 '{name}' 已删除"))
     except RuntimeError as e:
         return web.json_response(
-            app_response(code=AppCode.DATA_NOT_READY, msg=str(e)), status=503
+            app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
 
 

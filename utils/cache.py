@@ -16,4 +16,3 @@ class TaskCache:
     @classmethod
     def get_result(cls, id: str) -> t.Optional[TaskResult]:
         return t.cast(t.Optional[TaskResult], cls._cache.get(f'result-{id}'))
-        
