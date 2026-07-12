@@ -1,12 +1,8 @@
 from sqlalchemy import (
-    Column,
-    Integer,
-    String,
     inspect,
     select,
     text,
     and_,
-    UniqueConstraint,
 )
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
@@ -14,151 +10,52 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncSession,
 )
-from sqlalchemy.orm import declarative_base
 import typing as t
 import pandas as pd
 from .model import Config as ConfigModel
-from enum import Enum
-import importlib.util
-import inspect as insp
-
-
-class DataPeriod(Enum):
-    SECOND = 1
-    MINUTE = 60
-    HOUR = 3600
-    DAY = 86400
-
-    @classmethod
-    def from_seconds(cls, seconds: int) -> t.Optional["DataPeriod"]:
-        for period in cls:
-            if period.value == seconds:
-                return period
-        return None
+from .base import Target, DataPeriod
 
 
 _engine: t.Optional[AsyncEngine] = None
 _session: t.Optional[async_sessionmaker[AsyncSession]] = None
 
-base = declarative_base(name="DataCenter")
 
-# ==== MODEL =====
-
-
-class Exchange(base):
-    __tablename__ = "exchange"
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String(255), nullable=False, index=True, unique=True)
-
-
-class Script(base):
-    __tablename__ = "script"
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String(255), nullable=False, index=True, unique=True)
-    content = Column(String(1 << 16))
-
-    @classmethod
-    async def load_and_execute(cls, name: str, **context) -> t.Any:
-        """加载并执行指定名称的脚本。
-
-        Args:
-            name: 脚本名称
-            **context: 注入到脚本模块的上下文变量
-
-        Returns:
-            脚本中 run 函数的返回值
-
-        Raises:
-            ValueError: 脚本不存在时抛出
-            NotImplementedError: 脚本缺少 run 函数时抛出
-        """
-        if _session is None:
-            raise RuntimeError("数据中心未初始化，请先调用 init_data_center()")
-        async with get_session()() as s:
-            result = await s.execute(select(cls).filter_by(name=name))
-            row = result.first()
-        if row is None:
-            raise ValueError(f"脚本 '{name}' 不存在")
-        script = row[0]
-        # 动态加载为模块
-        mod = importlib.util.spec_from_loader(name, loader=None)
-        if mod is None:
-            raise RuntimeError(f"无法为脚本 '{name}' 创建模块规格")
-        mod = importlib.util.module_from_spec(mod)
-        # 注入上下文
-        for key, val in context.items():
-            setattr(mod, key, val)
-        try:
-            exec(t.cast(str, script.content), mod.__dict__)
-        except Exception as e:
-            raise RuntimeError(f"执行脚本 '{name}' 时出错: {e}") from e
-        func: t.Optional[t.Callable[[], t.Union[None, t.Awaitable[None]]]] = getattr(mod, "run", None)
-        if func is None:
-            raise NotImplementedError(f"脚本 '{name}' 必须定义 run 函数")
-        result = func()
-        return await result if insp.isawaitable(result) else result
-
-
-class Target(base):
-    __tablename__ = "target"
-
-    id = Column(Integer, primary_key=True)
-    code = Column(String(255), nullable=False, index=True, comment="标的唯一识别")
-    exchange = Column(String(255), nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("code", "exchange", name="code_exchange_unique_idx"),
-    )
-
-    def src_table(self, p: DataPeriod = DataPeriod.HOUR) -> str:
-        return f"DATA_{self.exchange}_{self.code}_{p.name}"
-
-    @staticmethod
-    async def check_target_table(name: str):
-        """检查数据表是否存在，不存在则自动建表。
-
-        表字段 open_time (BIGINT), open/high/low/close/volume (DECIMAL(20,8)),
-            close_time (BIGINT), quote_asset_volume (DECIMAL(20,8)),
-            number_of_trades (INT), taker_buy_base_asset_volume (DECIMAL(20,8)),
-            taker_buy_quote_asset_volume (DECIMAL(20,8)), ignore (INT)
-        """
-        if _session is None:
-            raise ValueError("数据中心未连接")
-        if _engine is None:
-            raise ValueError("数据中心未连接")
-        # 通过 run_sync 使用同步 inspector，避免 greenlet 上下文缺失错误
-        async with _engine.connect() as conn:
-            has = await conn.run_sync(
-                lambda sync_conn: inspect(sync_conn).has_table(name)
+async def check_target_table(name: str):
+    """检查数据表是否存在，不存在则自动建表。"""
+    if _session is None:
+        raise ValueError("数据中心未连接")
+    if _engine is None:
+        raise ValueError("数据中心未连接")
+    async with _engine.connect() as conn:
+        has = await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).has_table(name)
+        )
+    if has:
+        return
+    ddl = text(f"""
+        CREATE TABLE "{name}" (
+            id SERIAL PRIMARY KEY,
+            open_time BIGINT NOT NULL UNIQUE,
+            open DECIMAL(20,8) DEFAULT 0,
+            high DECIMAL(20,8) DEFAULT 0,
+            low DECIMAL(20,8) DEFAULT 0,
+            close DECIMAL(20,8) DEFAULT 0,
+            volume DECIMAL(20,8) DEFAULT 0,
+            close_time BIGINT DEFAULT 0,
+            quote_asset_volume DECIMAL(20,8) DEFAULT 0,
+            number_of_trades INT DEFAULT 0,
+            taker_buy_base_asset_volume DECIMAL(20,8) DEFAULT 0,
+            taker_buy_quote_asset_volume DECIMAL(20,8) DEFAULT 0,
+            "ignore" INT DEFAULT 0
+        )
+    """)
+    async with _engine.begin() as conn:
+        await conn.execute(ddl)
+        await conn.execute(
+            text(
+                f'CREATE INDEX IF NOT EXISTS idx_{name}_open_time ON "{name}" (open_time);'
             )
-        if has:
-            return
-        ddl = text(f"""
-            CREATE TABLE "{name}" (
-                id SERIAL PRIMARY KEY,
-                open_time BIGINT NOT NULL UNIQUE,
-                open DECIMAL(20,8) DEFAULT 0,
-                high DECIMAL(20,8) DEFAULT 0,
-                low DECIMAL(20,8) DEFAULT 0,
-                close DECIMAL(20,8) DEFAULT 0,
-                volume DECIMAL(20,8) DEFAULT 0,
-                close_time BIGINT DEFAULT 0,
-                quote_asset_volume DECIMAL(20,8) DEFAULT 0,
-                number_of_trades INT DEFAULT 0,
-                taker_buy_base_asset_volume DECIMAL(20,8) DEFAULT 0,
-                taker_buy_quote_asset_volume DECIMAL(20,8) DEFAULT 0,
-                "ignore" INT DEFAULT 0
-            )
-        """)
-        async with _engine.begin() as conn:
-            await conn.execute(ddl)
-            await conn.execute(
-                text(
-                    f'CREATE INDEX IF NOT EXISTS idx_{name}_open_time ON "{name}" (open_time);'
-                )
-            )
+        )
 
 
 # ==================
@@ -172,8 +69,6 @@ async def init_data_center():
         return
     _engine = create_async_engine(str(db_path), pool_size=10)
     _session = async_sessionmaker(bind=_engine)
-    async with _engine.begin() as conn:
-        await conn.run_sync(base.metadata.create_all)
 
 
 def get_session() -> async_sessionmaker[AsyncSession]:

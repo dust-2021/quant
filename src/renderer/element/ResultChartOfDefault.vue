@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, nextTick, onBeforeUnmount, watch } from 'vue'
-import { ElButton, ElEmpty } from 'element-plus'
+import { ElButton, ElEmpty, ElSelect, ElOption } from 'element-plus'
 import * as echarts from 'echarts'
 
 const props = defineProps<{
@@ -17,17 +17,31 @@ const candlestickData = ref<any[]>([])
 const fundingData = ref<any[]>([])
 const drawdownData = ref<any[]>([])
 const volumeData = ref<any[]>([])
+const allRows = ref<any[]>([])
 const dataCount = ref(0)
-const periodMs = ref(3600000) // 默认小时
+const periodMs = ref(3600000)
+// 可选字段
+const availableFields = ref<string[]>([])
+const selectedFields = ref<string[]>([])
+// 已知已渲染字段
+const knownFields = new Set(['open_time', 'open', 'close', 'high', 'low', 'code',
+  '__pos', '__istrade', '__tradeId', '__priceBuy', '__priceSell',
+  '__timeSell', '__income', '__trade_volume', '__premium', '__drawdown',
+  '__funding', 'quote_asset_volume', 'taker_buy_base_asset_volume',
+  'taker_buy_quote_asset_volume', 'number_of_trades', 'ignore'])
+// 额外线条颜色
+const lineColors = ['#e6a23c', '#67c23a', '#f56c6c', '#909399', '#b37feb', '#36cfc9', '#ff85c0', '#597ef7']
 
 function parseChartData() {
   candlestickData.value = []
   fundingData.value = []
   drawdownData.value = []
   volumeData.value = []
+  allRows.value = []
   dataCount.value = 0
   chartDataTooLarge.value = false
   periodMs.value = 3600000
+  availableFields.value = []
   if (!props.dataJson) return
   try {
     const arr = JSON.parse(props.dataJson)
@@ -36,9 +50,14 @@ function parseChartData() {
       chartDataTooLarge.value = true
       return
     }
+    allRows.value = arr
     dataCount.value = arr.length
     if (arr.length >= 2) {
       periodMs.value = arr[1].open_time - arr[0].open_time
+    }
+    // 提取可选字段
+    if (arr.length > 0) {
+      availableFields.value = Object.keys(arr[0]).filter(k => !knownFields.has(k))
     }
     for (const row of arr) {
       candlestickData.value.push([row.open_time, row.open, row.close, row.low, row.high])
@@ -58,9 +77,23 @@ async function doRenderChart() {
   chartInstance = echarts.init(chartRef.value)
   const upColor = colorReversed.value ? '#26a69a' : '#ef5350'
   const downColor = colorReversed.value ? '#ef5350' : '#26a69a'
+
+  // 构建选中字段的 series
+  const extraSeries: any[] = selectedFields.value.map((field, idx) => ({
+    name: field,
+    type: 'line',
+    xAxisIndex: 0,
+    yAxisIndex: 1,
+    data: allRows.value.map((r: any) => r[field] ?? null),
+    smooth: true,
+    symbol: 'none',
+    connectNulls: true,
+    lineStyle: { color: lineColors[idx % lineColors.length], width: 1.5 },
+  }))
+
   chartInstance.setOption({
     legend: {
-      data: ['K线', '资金曲线', '回撤'],
+      data: ['K线', '资金曲线', '回撤', ...selectedFields.value],
       top: 0,
       selected: { '资金曲线': false, '回撤': false },
     },
@@ -160,6 +193,7 @@ async function doRenderChart() {
           },
         },
       },
+      ...extraSeries,
     ],
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1] },
@@ -210,6 +244,12 @@ watch(() => props.dataJson, () => {
           <ElButton type="primary" @click="doRenderChart">渲染图表</ElButton>
           <ElButton @click="toggleColor">{{ colorReversed ? '红跌绿涨' : '红涨绿跌' }}</ElButton>
         </div>
+        <div class="chart-fields" v-if="availableFields.length">
+          <span class="chart-fields__label">附加字段：</span>
+          <ElSelect v-model="selectedFields" multiple placeholder="选择要显示的字段" size="small" style="width: 360px;">
+            <ElOption v-for="f in availableFields" :key="f" :label="f" :value="f" />
+          </ElSelect>
+        </div>
       </div>
     </template>
     <template v-else-if="!candlestickData.length">
@@ -242,5 +282,18 @@ watch(() => props.dataJson, () => {
 .chart-actions {
   display: flex;
   gap: 8px;
+}
+
+.chart-fields {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.chart-fields__label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 </style>

@@ -6,7 +6,6 @@ import {ref} from 'vue';
 
 <template>
     <div style="height: 40px;width:100%">
-        header
     </div>
     <div style="height: calc(100% - 40px);width: 100%;background-color: var(--bg-page);display: flex;flex-direction: row;">
         <div style="width: 68%;height: 100%;display:flex;flex-direction: column;">

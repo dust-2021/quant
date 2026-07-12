@@ -74,6 +74,7 @@ export async function executeStrategy(params: {
     multi_values?: (string | number | boolean)[];
     multi_expression?: string;
 }) {
+    console.log('executeStrategy params:', params);
     return await fetch<string | string[]>('/api/strategy/execute', 'POST', params);
 }
 

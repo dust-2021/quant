@@ -40,7 +40,7 @@ params: t.Dict[str, t.Any] = {}
 context: t.Dict[str, t.Any] = {}
 
 def run(data: pd.DataFrame):
-    pass
+    return data
 `
 });
 
@@ -92,8 +92,8 @@ async function saveAsNewVersion() {
             confirmButtonText: '确定',
             cancelButtonText: '取消',
             inputValue: factor.value.version,
-            inputPattern: /^\d+\.\d+\.\d+$/,
-            inputErrorMessage: '版本号格式不正确，请使用 x.y.z 格式',
+            inputPattern: /.*/,
+            inputErrorMessage: '版本号格式不正确',
         });
         if (!newVersion) return;
         // 同步编辑器内容

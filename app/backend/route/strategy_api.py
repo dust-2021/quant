@@ -96,10 +96,12 @@ async def update_strategy(
             app_response(code=AppCode.DATA_INVALID, msg="data is None")
         )
     async with async_session() as s:
+        new_uuid = None
         try:
             if data.get("uuid") == "": # 新增
+                new_uuid = uuid.uuid4().hex
                 stra = Strategy(
-                    uuid=uuid.uuid4().hex,
+                    uuid=new_uuid,
                     group=data.get("group"),
                     name=data.get("name"),
                     version=data.get("version"),
@@ -135,7 +137,7 @@ async def update_strategy(
             )
         finally:
             await s.commit()
-    return web.json_response(app_response(data=True))
+    return web.json_response(app_response(data=new_uuid if data.get("uuid") == "" else True))
 
 
 @auth(perm=["strategy.write"])

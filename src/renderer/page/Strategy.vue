@@ -10,7 +10,6 @@ import ParamBand from '../element/ParamBand.vue';
 import ParamEditor from '../element/ParamEditor.vue';
 import CustomIcon from '../element/CustomIcon.vue';
 import { StrategyResultStore } from '../../store';
-import { info } from 'node:console';
 
 const router = useRouter();
 
@@ -50,7 +49,7 @@ params: t.Dict[str, t.Any] = {}
 context: t.Dict[str, t.Any] = {}
 
 def run(data: pd.DataFrame):
-    pass
+    return data
 `
 });
 
@@ -93,6 +92,11 @@ async function save() {
     }
     const resp = await updateStrategy(strategy.value);
     if (resp.code === 0) {
+        // 新建策略：后端返回 uuid，更新并跳转到编辑页面
+        if (!strategy.value.uuid && resp.data && typeof resp.data === 'string') {
+            strategy.value.uuid = resp.data
+            router.replace({ name: 'Strategy', params: { uuid: resp.data } })
+        }
         ElMessage.success('策略已保存');
     } else {
         ElMessage.error('保存失败: ' + resp.msg);
@@ -106,8 +110,8 @@ async function saveAsNewVersion() {
             confirmButtonText: '确定',
             cancelButtonText: '取消',
             inputValue: strategy.value.version,
-            inputPattern: /^\d+\.\d+\.\d+$/,
-            inputErrorMessage: '版本号格式不正确，请使用 x.y.z 格式',
+            inputPattern: /.*/,
+            inputErrorMessage: '版本号格式不正确',
         });
         if (!newVersion) return;
         // 同步编辑器内容

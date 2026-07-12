@@ -8,7 +8,8 @@ import loguru
 from cores.backtest.runner_loader import get_runner, Runer_T
 from .base import Core
 import pandas as pd
-from database.data_center import DataPeriod, load_data
+from database.base import DataPeriod
+from database.data_center import load_data
 from utils.cache import TaskCache
 
 def _run_task(

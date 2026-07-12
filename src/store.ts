@@ -66,6 +66,7 @@ export interface taskResult {
     params: Record<string, any>,
     liquidation: number | null,
     data: string | null, // dataframe的json字符串，多参数执行时不返回计算数据
+    premium: number,
     netValue: number,
     annualizedRateOfReturn: number,
     monthlyRateOfReturn: number,

@@ -83,7 +83,7 @@ def run(
     liquidation_date = None
     if len(liquidation_idx) != 0:
         liquidation_filter = df.index >= liquidation_idx[0]
-        liquidation_date = df[liquidation_filter]['open_time'][0]
+        liquidation_date = df[liquidation_filter]['open_time'].values[0]
         df.loc[liquidation_filter, "__istrade"] = False
         df.loc[liquidation_filter, "__pos"] = 0
         df.loc[liquidation_filter, "__income"] = -1
@@ -101,7 +101,8 @@ def run(
         "target": ctx['target'],
         "period": ctx['period'],
         "params": params,
-        "liquidation": liquidation_date,  # 爆仓
+        "liquidation": int(liquidation_date) if liquidation_date is not None else None,  # 爆仓
+        "premium": (df["__premium"] * df[funding_col]).sum(),  # 手续费
         "data": None
         if is_multi
         else df.to_json(index=False, orient="records"),  # 计算数据
@@ -162,13 +163,4 @@ def run(
     )
     # 交易订单数据
     result["tradeData"] = trade_df.to_json(orient="records")
-
-    # NaN 替换为 None，确保 JSON 序列化安全
-    def _sanitize(v):
-        if isinstance(v, float) and np.isnan(v):
-            return None
-        if isinstance(v, list):
-            return [None if isinstance(x, float) and np.isnan(x) else x for x in v]
-        return v
-
-    return {k: _sanitize(v) for k, v in result.items()}
+    return result

@@ -2,13 +2,14 @@ from sqlalchemy import select
 
 from cores.executor.calculator import Calculator
 from utils.cache import TaskCache
-from database.data_center import DataPeriod
+from database.base import DataPeriod
 from utils.middleware.type_checker import json_post_checker
 from utils.types import AppCode, app_response
 from aiohttp import web
 import typing as t
 from database.model import Calculator as CalculatorModel
 from database.base import async_session
+import numpy as np
 
 
 @json_post_checker(necessary_keys={"uuid": str, "start_time": int, "end_time": int},
@@ -42,6 +43,14 @@ async def execute_strategy(
     )
     return web.json_response(app_response(data=result_id))
 
+# NaN 替换为 None，确保 JSON 序列化安全
+def _sanitize(v):
+    if isinstance(v, float) and np.isnan(v):
+        return None
+    if isinstance(v, list):
+        return [None if isinstance(x, float) and np.isnan(x) else x for x in v]
+    return v
+
 
 async def strategy_result(request: web.Request):
     id = request.match_info["id"]
@@ -49,7 +58,9 @@ async def strategy_result(request: web.Request):
         return web.json_response(app_response(code=AppCode.NOT_FOUND, msg="unkown task id or already expire"))
     if not res.success:
         return web.json_response(app_response(code=AppCode.EXECUTE_FAILED, msg=f"task failed: {res.data}"))
-    return web.json_response(app_response(data=res.data))
+
+    data =  {k: _sanitize(v) for k, v in res.data.items()}
+    return web.json_response(app_response(data=data))
 
 
 async def get_runner_list(request: web.Request):

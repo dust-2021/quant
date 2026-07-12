@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import {
   ElCard, ElTag, ElScrollbar, ElDescriptions, ElDescriptionsItem,
   ElAlert, ElSkeleton, ElTable, ElTableColumn,
-  ElTabs, ElTabPane, ElEmpty, ElSelect, ElOption
+  ElTabs, ElTabPane, ElEmpty, ElSelect, ElOption, ElButton
 } from 'element-plus'
 import { fetch } from '../../api/base'
 import { taskResult } from '../../store'
@@ -48,6 +48,7 @@ const loading = ref(true)
 
 const metricLabels: Record<string, string> = {
   netValue: '累计净值',
+  premium: '手续费',
   annualizedRateOfReturn: '年化收益率',
   monthlyRateOfReturn: '月化收益率',
   maximumDrawdown: '最大回撤',
@@ -94,6 +95,30 @@ function formatPeriod(seconds: number | null | undefined): string {
   return '秒'
 }
 
+function exportCsv() {
+  if (!singleResult.value?.data) return
+  try {
+    const rows = JSON.parse(singleResult.value.data)
+    if (!Array.isArray(rows) || !rows.length) return
+    const cols = Object.keys(rows[0])
+    const header = cols.join(',')
+    const body = rows.map((r: any) => cols.map(c => {
+      const v = r[c]
+      if (v === null || v === undefined) return ''
+      const s = String(v)
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+    }).join(','))
+    const csv = [header, ...body].join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `backtest_data_${taskId.slice(0, 8)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch { /* ignore */ }
+}
+
 function formatTarget(target: string[] | null | undefined): string {
   if (!target || !target.length) return '-'
   if (target.length <= 5) return target.join(', ')
@@ -111,6 +136,13 @@ function initSubResult(sr: SubResult) {
     sr.tradeRows = parseTradeData(sr.result.tradeData)
     sr.signalCol = detectSignalCol(sr.result.params)
   }
+  // 从实际执行参数中获取并行参数值
+  if (sr.result?.params && meta.value?.multiParam) {
+    const v = sr.result.params[meta.value.multiParam]
+    if (v !== undefined && v !== null) {
+      sr.value = String(v)
+    }
+  }
 }
 
 async function loadResult() {
@@ -126,17 +158,30 @@ async function loadResult() {
       value: String(multiValues[i] ?? subId.slice(0, 8)),
       status: 'loading' as const,
     }))
-    await Promise.all(subResults.value.map(async (sr) => {
+    const promises = subResults.value.map(async (sr) => {
       const resp = await fetch<any>(`/api/execute/result/${sr.id}`, 'GET')
       if (resp.code === 0) {
+        const result = resp.data as taskResult
         sr.status = 'success'
-        sr.result = resp.data as taskResult
-        initSubResult(sr)
+        sr.result = result
+        // 订单数据
+        if (result.tradeData) {
+          sr.tradeRows = parseTradeData(result.tradeData)
+          sr.signalCol = detectSignalCol(result.params)
+        }
+        // 从实际执行参数中提取并行参数值
+        if (result.params && meta.value?.multiParam) {
+          const v = result.params[meta.value.multiParam]
+          if (v !== undefined && v !== null) {
+            sr.value = String(v)
+          }
+        }
       } else {
         sr.status = 'failed'
         sr.error = resp.msg || '执行失败'
       }
-    }))
+    })
+    await Promise.all(promises)
   } else {
     const resp = await fetch<any>(`/api/execute/result/${taskId}`, 'GET')
     if (resp.code === 0) {
@@ -256,7 +301,10 @@ onBeforeMount(() => {
           </ElDescriptions>
           <!-- 回测起止时间 & 爆仓 -->
           <div class="time-info">
-            <div>回测区间：{{ formatTime(singleResult.startTime) }} ~ {{ formatTime(singleResult.endTime) }} · 周期：{{ formatPeriod(singleResult.period) }}</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span>回测区间：{{ formatTime(singleResult.startTime) }} ~ {{ formatTime(singleResult.endTime) }} · 周期：{{ formatPeriod(singleResult.period) }}</span>
+              <ElButton v-if="singleResult.data" size="small" @click="exportCsv">导出CSV</ElButton>
+            </div>
             <div>标的：{{ formatTarget(singleResult.target) }}</div>
             <div>
               <span v-if="singleResult.liquidation != null" style="color: var(--el-color-danger);">爆仓时间：{{ formatTime(singleResult.liquidation) }}</span>

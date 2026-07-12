@@ -20,4 +20,5 @@ class Config:
     ProxyPort = 0
     
     Exchange = ""
+    SecretKeys = dict()
     
