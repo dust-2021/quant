@@ -196,7 +196,7 @@ const displayGroups = computed(() => groups.value);
                         <div class="group-card__desc" v-else style="color: var(--text-secondary);">暂无描述</div>
                     </div>
                 </div>
-                <ElEmpty v-else description="暂无策略分组" />
+                <ElEmpty v-if="!loading && displayGroups.length === 0" description="暂无策略分组" />
             </ElScrollbar>
         </div>
 

@@ -1,7 +1,8 @@
 from aiohttp import web
 from sqlalchemy import select, text
 from database.data_center import get_session
-from database.base import Exchange, Script, Target, DataPeriod, async_session as dc_async_session
+from database.base import DataPeriod, async_session as dc_async_session
+from database.model import Exchange, Script, Target
 from utils.types import app_response, AppCode
 from utils.middleware.type_checker import json_post_checker
 import typing as t
@@ -72,7 +73,7 @@ async def delete_exchange(req: web.Request, data: t.Optional[t.Dict[str, t.Any]]
                 await s.delete(tgt)
             await s.delete(row[0])
             await s.commit()
-        return web.json_response(msg=f"交易所 '{name}' 已删除")
+        return web.json_response(app_response(msg=f"交易所 '{name}' 已删除"))
     except Exception as e:
         return web.json_response(
             app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
@@ -233,34 +234,47 @@ async def check_data_integrity(req: web.Request) -> web.Response:
             return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="时间段跨度过大（超过100万条），请缩小范围"))
 
         async with get_session()() as s:
-            # 查询数据范围和条数
+            # 按 data_type 分组查询数据范围和条数
             query = text(f"""
-                SELECT MIN(open_time) as min_time, MAX(open_time) as max_time, COUNT(*) as cnt
+                SELECT COALESCE(data_type, 0) as data_type, MIN(open_time) as min_time, MAX(open_time) as max_time, COUNT(*) as cnt
                 FROM "{table_name}"
                 WHERE open_time >= :start_time AND open_time <= :end_time
+                GROUP BY data_type
+                ORDER BY data_type
             """)
             result = await s.execute(query, {"start_time": start_ts, "end_time": end_ts})
-            row = result.fetchone()
-            if row is None:
-                return web.json_response(app_response(data={"table": table_name, "count": 0, "complete": False, "min_time": None, "max_time": None}))
+            rows = result.all()
 
-            min_time, max_time, count = row[0], row[1], row[2]
-            if count == 0 or min_time is None:
-                return web.json_response(app_response(data={"table": table_name, "count": 0, "expected": expected_count, "complete": False, "min_time": None, "max_time": None}))
+            if not rows:
+                return web.json_response(app_response(data={
+                    "table": table_name, "query_start": start_ts, "query_end": end_ts,
+                    "expected": expected_count, "groups": [],
+                }))
 
-            # 应有条数 vs 实际条数，时间边界容差一个周期
-            tolerance = period_ms
-            complete = count == expected_count and (min_time - tolerance) <= start_ts and (max_time + tolerance) >= end_ts
+            groups = []
+            all_complete = True
+            for row in rows:
+                data_type, min_time, max_time, count = row[0], row[1], row[2], row[3]
+                tolerance = period_ms
+                complete = count == expected_count and (min_time or 0) - tolerance <= start_ts and (max_time or 0) + tolerance >= end_ts
+                if not complete:
+                    all_complete = False
+                groups.append({
+                    "data_type": int(data_type),
+                    "count": count,
+                    "expected": expected_count,
+                    "complete": complete,
+                    "min_time": min_time,
+                    "max_time": max_time,
+                })
 
             return web.json_response(app_response(data={
                 "table": table_name,
-                "count": count,
-                "expected": expected_count,
-                "complete": complete,
-                "min_time": min_time,
-                "max_time": max_time,
                 "query_start": start_ts,
                 "query_end": end_ts,
+                "expected": expected_count,
+                "all_complete": all_complete,
+                "groups": groups,
             }))
     except Exception as e:
         return web.json_response(app_response(code=AppCode.DATA_NOT_READY, msg=str(e)))

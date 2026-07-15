@@ -143,7 +143,7 @@ onBeforeMount(() => refresh())
           </template>
         </ElTableColumn>
       </ElTable>
-      <ElEmpty v-else description="暂无算子" />
+      <ElEmpty v-if="!loading && !calculators.length" description="暂无算子" />
     </ElScrollbar>
 
     <!-- 编辑弹窗 -->

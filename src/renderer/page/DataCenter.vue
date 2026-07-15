@@ -14,6 +14,7 @@ const monacoTheme = computed(() => themeStore.isDark ? 'github-dark' : 'github-l
 const exchanges = ref<ExchangeItem[]>([])
 const currentExchange = ref<string>('')
 const exchangeLoading = ref(false)
+const exchangeLoaded = ref(false)
 
 async function refreshExchanges() {
   exchangeLoading.value = true
@@ -22,6 +23,7 @@ async function refreshExchanges() {
     currentExchange.value = (await getSetting<string>('Exchange')) || ''
   } finally {
     exchangeLoading.value = false
+    exchangeLoaded.value = true
   }
 }
 
@@ -59,7 +61,7 @@ async function handleCreateExchange() {
 async function handleDeleteExchange(exchange: ExchangeItem) {
   try {
     await ElMessageBox.confirm(
-      `确定要删除交易所「${exchange.name}」吗？该交易所下的所有标的也将被删除。此操作不可恢复。`,
+      `确定删除交易所「${exchange.name}」，该交易所下的所有标的也将被删除（数据中心数据不影响）`,
       '删除交易所',
       { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
     )
@@ -78,6 +80,7 @@ async function handleDeleteExchange(exchange: ExchangeItem) {
 // ===== 脚本 =====
 const scripts = ref<ScriptItem[]>([])
 const scriptLoading = ref(false)
+const scriptLoaded = ref(false)
 
 async function refreshScripts() {
   scriptLoading.value = true
@@ -85,6 +88,7 @@ async function refreshScripts() {
     scripts.value = await getScripts()
   } finally {
     scriptLoading.value = false
+    scriptLoaded.value = true
   }
 }
 
@@ -316,7 +320,7 @@ onBeforeMount(async () => {
             </div>
           </ElCard>
         </div>
-        <ElEmpty v-else description="暂无交易所数据" />
+        <ElEmpty v-if="exchangeLoaded && exchanges.length === 0" description="暂无交易所数据" />
       </ElScrollbar>
     </div>
 
@@ -346,7 +350,7 @@ onBeforeMount(async () => {
                 </template>
               </ElTableColumn>
             </ElTable>
-            <ElEmpty v-else description="暂无脚本数据" />
+            <ElEmpty v-if="scriptLoaded && scripts.length === 0" description="暂无脚本数据" />
           </ElScrollbar>
         </ElTabPane>
 
@@ -386,17 +390,30 @@ onBeforeMount(async () => {
               </div>
               <div v-if="integrityResult" style="margin-top: 12px;">
                 <ElDescriptions :column="2" border size="small">
-                  <ElDescriptionsItem label="实际条数">{{ integrityResult.count }}</ElDescriptionsItem>
                   <ElDescriptionsItem label="应有条数">{{ integrityResult.expected }}</ElDescriptionsItem>
+                  <ElDescriptionsItem label="数据类型分组">{{ integrityResult.groups?.length || 0 }} 组</ElDescriptionsItem>
                   <ElDescriptionsItem label="查询范围起">{{ integrityResult.query_start ? new Date(integrityResult.query_start).toLocaleString() : '-' }}</ElDescriptionsItem>
                   <ElDescriptionsItem label="查询范围止">{{ integrityResult.query_end ? new Date(integrityResult.query_end).toLocaleString() : '-' }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="数据起始">{{ integrityResult.min_time ? new Date(integrityResult.min_time).toLocaleString() : '-' }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="数据结束">{{ integrityResult.max_time ? new Date(integrityResult.max_time).toLocaleString() : '-' }}</ElDescriptionsItem>
                 </ElDescriptions>
-                <ElResult style="margin-top: 8px;"
-                  :type="integrityResult.complete ? 'success' : 'warning'"
-                  :title="integrityResult.complete ? '数据完整' : '数据不完整'"
-                  :sub-title="integrityResult.complete ? '' : `缺失约 ${integrityResult.expected - integrityResult.count} 条数据`" />
+                <!-- 按 data_type 分组展示 -->
+                <div v-for="g in integrityResult.groups" :key="g.data_type" style="margin-top: 12px;">
+                  <h5 style="margin: 0 0 6px 0;">数据类型-{{g.data_type}}</h5>
+                  <ElDescriptions :column="3" border size="small">
+                    <ElDescriptionsItem label="实际条数">{{ g.count }}</ElDescriptionsItem>
+                    <ElDescriptionsItem label="应有条数">{{ g.expected }}</ElDescriptionsItem>
+                    <ElDescriptionsItem label="缺失">{{ g.expected - g.count }}</ElDescriptionsItem>
+                    <ElDescriptionsItem label="数据起始">{{ g.min_time ? new Date(g.min_time).toLocaleString() : '-' }}</ElDescriptionsItem>
+                    <ElDescriptionsItem label="数据结束">{{ g.max_time ? new Date(g.max_time).toLocaleString() : '-' }}</ElDescriptionsItem>
+                    <ElDescriptionsItem label="完整">
+                      <ElTag :type="g.complete ? 'success' : 'warning'" size="small" effect="plain">
+                        {{ g.complete ? '完整' : '不完整' }}
+                      </ElTag>
+                    </ElDescriptionsItem>
+                  </ElDescriptions>
+                </div>
+                <ElResult style="margin-top: 12px;"
+                  :type="integrityResult.all_complete ? 'success' : 'warning'"
+                  :title="integrityResult.all_complete ? '数据完整' : '数据不完整'" />
               </div>
             </template>
           </div>

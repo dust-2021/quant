@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import (
 )
 import typing as t
 import pandas as pd
-from .model import Config as ConfigModel
-from .base import Target, DataPeriod
+from .model import Config as ConfigModel, Target
+from .base import DataPeriod, async_session
 
 
 _engine: t.Optional[AsyncEngine] = None
@@ -27,15 +27,14 @@ async def check_target_table(name: str):
     if _engine is None:
         raise ValueError("数据中心未连接")
     async with _engine.connect() as conn:
-        has = await conn.run_sync(
-            lambda sync_conn: inspect(sync_conn).has_table(name)
-        )
+        has = await conn.run_sync(lambda sync_conn: inspect(sync_conn).has_table(name))
     if has:
         return
     ddl = text(f"""
         CREATE TABLE "{name}" (
             id SERIAL PRIMARY KEY,
-            open_time BIGINT NOT NULL UNIQUE,
+            data_type INT NOT NULL DEFAULT 0,
+            open_time BIGINT NOT NULL,
             open DECIMAL(20,8) DEFAULT 0,
             high DECIMAL(20,8) DEFAULT 0,
             low DECIMAL(20,8) DEFAULT 0,
@@ -51,9 +50,14 @@ async def check_target_table(name: str):
     """)
     async with _engine.begin() as conn:
         await conn.execute(ddl)
+        # await conn.execute(
+        #     text(
+        #         f'CREATE INDEX IF NOT EXISTS idx_{name}_open_time ON "{name}" (open_time);'
+        #     )
+        # )
         await conn.execute(
             text(
-                f'CREATE INDEX IF NOT EXISTS idx_{name}_open_time ON "{name}" (open_time);'
+                f'CREATE UNIQUE INDEX IF NOT EXISTS idx_{name}_uninon on "{name}" (open_time, data_type);'
             )
         )
 
@@ -100,7 +104,7 @@ async def load_data(
     target_s: t.Set[str] = set(target)
     if _engine is None:
         raise ValueError("数据中心未链接")
-    async with get_session()() as session:
+    async with async_session() as session:
         resp = (
             await session.execute(
                 select(Target).filter(
@@ -118,17 +122,20 @@ async def load_data(
                 )
             )
         )
-        code_tables: t.List[t.Tuple[str, str]] = [(t.cast(str, x.code), x.src_table(p)) for x in resp.scalars().all()]
+        code_tables: t.List[t.Tuple[str, str]] = [
+            (t.cast(str, x.code), x.src_table(p)) for x in resp.scalars().all()
+        ]
 
-        # 检查每个表是否存在（兼容 SQLite / PostgreSQL / MySQL 等）
-        async with _engine.connect() as conn:
-            for _, table_name in code_tables:
-                has = await conn.run_sync(
-                    lambda sync_conn, tn=table_name: inspect(sync_conn).has_table(tn)
-                )
-                if not has:
-                    raise ValueError(f"数据表 '{table_name}' 在数据中心中不存在")
+    # 检查每个表是否存在（兼容 SQLite / PostgreSQL / MySQL 等）
+    async with _engine.connect() as conn:
+        for _, table_name in code_tables:
+            has = await conn.run_sync(
+                lambda sync_conn, tn=table_name: inspect(sync_conn).has_table(tn)
+            )
+            if not has:
+                raise ValueError(f"数据表 '{table_name}' 在数据中心中不存在")
 
+    async with get_session()() as session:
         # 查询各表数据并拼接
         frames: t.List[pd.DataFrame] = []
         for code, table_name in code_tables:
@@ -143,17 +150,22 @@ async def load_data(
                 df = pd.DataFrame(rows, columns=list(result.keys()))
                 # 将 DECIMAL 列转为 float，方便 DataFrame 数值计算
                 decimal_cols = [
-                    "open", "high", "low", "close", "volume",
-                    "quote_asset_volume", "taker_buy_base_asset_volume",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "quote_asset_volume",
+                    "taker_buy_base_asset_volume",
                     "taker_buy_quote_asset_volume",
                 ]
                 for col in decimal_cols:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce").astype(float)
-                df['code'] = code
+                df["code"] = code
                 frames.append(df)
 
         if not frames:
             return pd.DataFrame()
 
-        return pd.concat(frames, ignore_index=True)
+    return pd.concat(frames, ignore_index=True)

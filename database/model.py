@@ -1,6 +1,8 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Text, PickleType
-from .base import base
+import importlib.util
+import inspect as insp
+from sqlalchemy import Column, Integer, String, Text, PickleType, UniqueConstraint
+from .base import DataPeriod, base
 import uuid
 from database.base import async_session
 from sqlalchemy import select, and_
@@ -122,4 +124,61 @@ class Calculator(base):
     update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))
     description = Column(Text, nullable=True)
     content = Column(Text, nullable=False, default="", comment="计算器内容")
+
+
+# =========== 数据中心逻辑表 ===============
+
+class Target(base):
+    __tablename__ = "target"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(255), nullable=False, index=True, comment="标的唯一识别")
+    exchange = Column(String(255), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("code", "exchange", name="code_exchange_unique_idx"),
+    )
+
+    def src_table(self, p: DataPeriod) -> str:
+        return f"DATA_{self.exchange}_{self.code}_{p.name}"
+
+
+class Script(base):
+    __tablename__ = "script"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False, index=True, unique=True)
+    content = Column(String(1 << 16))
+
+    @classmethod
+    async def load_and_execute(cls, name: str, **context) -> t.Any:
+        """加载并执行指定名称的脚本。"""
+        async with async_session() as s:
+            result = await s.execute(select(cls).filter_by(name=name))
+            row = result.first()
+        if row is None:
+            raise ValueError(f"脚本 '{name}' 不存在")
+        script = row[0]
+        mod = importlib.util.spec_from_loader(name, loader=None)
+        if mod is None:
+            raise RuntimeError(f"无法为脚本 '{name}' 创建模块规格")
+        mod = importlib.util.module_from_spec(mod)
+        for key, val in context.items():
+            setattr(mod, key, val)
+        try:
+            exec(t.cast(str, script.content), mod.__dict__)
+        except Exception as e:
+            raise RuntimeError(f"执行脚本 '{name}' 时出错: {e}") from e
+        func: t.Optional[t.Callable] = getattr(mod, "run", None)
+        if func is None:
+            raise NotImplementedError(f"脚本 '{name}' 必须定义 run 函数")
+        result = func()
+        return await result if insp.isawaitable(result) else result
+
+
+class Exchange(base):
+    __tablename__ = "exchange"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False, index=True, unique=True)
     

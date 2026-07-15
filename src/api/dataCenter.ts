@@ -95,13 +95,22 @@ export async function checkDataTable(exchange: string, code: string, period: num
   return resp.data || null
 }
 
-export interface DataIntegrityResult {
-  table: string
+export interface DataIntegrityGroup {
+  data_type: number
   count: number
   expected: number
   complete: boolean
   min_time: number | null
   max_time: number | null
+}
+
+export interface DataIntegrityResult {
+  table: string
+  query_start: number
+  query_end: number
+  expected: number
+  all_complete: boolean
+  groups: DataIntegrityGroup[]
 }
 
 export async function checkDataIntegrity(
