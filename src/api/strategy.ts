@@ -56,11 +56,9 @@ export async function deleteStrategy(uuid: string) {
  * @param params.target 回测标的列表，默认为空表示不筛选，使用所有标的
  * @param params.period 回测周期，默认为1天，单位秒
  * @param params.runner_name 回测执行器名称，默认为"default"
- * @param params.multi 是否多参数回测，默认为false
- * @param params.multi_param 多参数回测时的参数名称
- * @param params.multi_values 多参数回测时的参数取值列表
- * @param params.multi_expression Python 列表推导式，优先级高于 multi_values
- * @return 回测结果id，单参数回测为字符串，多参数回测为字符串列表，列表顺序与multi_values顺序一致
+ * @param params.multi_params 多参数回测：{"_strategy.param": [v1], "_factor.uuid.param": [v2]}
+ * @param params.multi_expressions Python列表推导式：{"_strategy.param": "range(1,10)"}，优先级高于 multi_params 同名键
+ * @return 回测结果id
 */
 export async function executeStrategy(params: {
     uuid: string;
@@ -69,10 +67,8 @@ export async function executeStrategy(params: {
     target?: string[];
     period?: number;
     runner_name?: string;
-    multi?: boolean;
-    multi_param?: string;
-    multi_values?: (string | number | boolean)[];
-    multi_expression?: string;
+    multi_params?: Record<string, (string | number | boolean)[]>;
+    multi_expressions?: Record<string, string>;
 }) {
     console.log('executeStrategy params:', params);
     return await fetch<string | string[]>('/api/strategy/execute', 'POST', params);

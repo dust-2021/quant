@@ -257,8 +257,8 @@ async function doCheckIntegrity() {
   integrityResult.value = null
   try {
     const result = await checkDataIntegrity(checkExchange.value, checkCode.value, checkPeriod.value, start, end)
-    if (result === null) {
-      ElMessage.error('完整性检查失败')
+    if (typeof result === 'string') {
+      ElMessage.error(result);
     } else {
       integrityResult.value = result
     }

@@ -33,6 +33,7 @@ async def get_strategy(request: web.Request):
         "name": f.name,
         "version": f.version,
         "description": f.description,
+        "params": f.params or [],
     } for f in factor_details] if factor_details else []
 
     return web.json_response(app_response(data={

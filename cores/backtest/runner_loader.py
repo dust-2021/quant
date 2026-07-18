@@ -6,7 +6,7 @@ from database.model import Calculator as CalculatorModel
 from cores.executor.base import Core
 from sqlalchemy import select
 
-Runer_T: t.TypeAlias = t.Callable[[pd.DataFrame, t.Dict[str, t.Any], t.Dict[str, t.Any], bool], t.Any]
+Runer_T: t.TypeAlias = t.Callable[[pd.DataFrame, t.Dict[str, t.Any], t.Dict[str, t.Any], t.Dict[str, t.Any]], t.Any]
 
 async def get_runner(name: str) -> t.Optional[Runer_T]:
     if name == 'default':

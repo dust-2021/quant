@@ -46,10 +46,8 @@ export interface TaskItem {
     createdAt: number;
     data?: taskResult;
     error?: string;
-    /** 多参数并行时的并行参数名 */
-    multiParam?: string;
-    /** 多参数并行时的参数取值列表 */
-    multiValues?: (string | number | boolean)[];
+    /** 多参数并行时的参数键列表（带前缀，如 ["_strategy.leverage", "_factor.uuid.window"]） */
+    multiParamKeys?: string[];
     /** 多参数并行时的子任务 ID 列表 */
     subIds?: string[];
     /** 子任务状态：subId → status */
@@ -106,21 +104,12 @@ export const StrategyResultStore = defineStore('strategyResult', {
          *  ids 为数组时视为同一任务的多个子任务，合并为一个组任务存储，
          *  所有子任务完成后组任务视为完成，任意子任务失败组任务视为失败。
          */
-        addTasks(ids: string | string[], strategyName: string = '', runnerName: string = '', multiParam?: string, multiValues?: (string | number | boolean)[]) {
-            const meta = {
-                strategyName,
-                runnerName: runnerName || 'default',
-                multiParam: multiParam || '',
-                multiValues: multiValues || [],
-            };
+        addTasks(ids: string | string[], strategyName: string = '', runnerName: string = '', multiParamKeys?: string[]) {
+            const meta = { strategyName, runnerName: runnerName || 'default', multiParamKeys: multiParamKeys || [] };
             if (Array.isArray(ids)) {
-                // 多参数并行 → 作为一个组任务
                 const groupId = ids[0];
                 const subStatus: Record<string, 'pending'> = {};
-                for (const subId of ids) {
-                    subStatus[subId] = 'pending';
-                }
-                // 持久化元信息供新标签页读取
+                for (const subId of ids) { subStatus[subId] = 'pending'; }
                 sessionStorage.setItem(`task_${groupId}`, JSON.stringify({ ...meta, subIds: ids }));
                 if (!this.tasks.has(groupId)) {
                     this.tasks.set(groupId, {
@@ -128,8 +117,7 @@ export const StrategyResultStore = defineStore('strategyResult', {
                         strategyName,
                         status: 'pending',
                         createdAt: Date.now(),
-                        multiParam: multiParam || '',
-                        multiValues: multiValues || [],
+                        multiParamKeys: multiParamKeys || [],
                         subIds: ids,
                         subStatus,
                     });

@@ -14,8 +14,7 @@ import numpy as np
 
 @json_post_checker(necessary_keys={"uuid": str, "start_time": int, "end_time": int},
                    optional_keys={"target": list, "period": int,
-                                  "multi": bool, "multi_param": str, "multi_values": list, "runner_name": str,
-                                  "multi_expression": str
+                                  "multi_params": dict, "multi_expressions": dict, "runner_name": str,
                                   })
 async def execute_strategy(
     request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None
@@ -29,17 +28,25 @@ async def execute_strategy(
         return web.json_response(
             app_response(code=AppCode.DATA_INVALID, msg="invalid period")
         )
-    result_id = await Calculator.execute(
+    # 处理多参数：将 values 展开为 list
+    multi_params: t.Dict[str, t.List[t.Any]] = {}
+    raw_multi = data.get("multi_params", {})
+    if isinstance(raw_multi, dict):
+        for k, v in raw_multi.items():
+            if isinstance(v, list):
+                multi_params[k] = v
+            else:
+                multi_params[k] = [v]
+    multi_expressions: t.Dict[str, str] = data.get("multi_expressions", {}) or {}
+    result_id = await Calculator.async_task(
         strategy_uuid=data["uuid"],
         start_time=data["start_time"],
         end_time=data["end_time"],
         target=data.get("target"),
         period=period,
-        multi=data.get("multi", False),
-        multi_param=data.get("multi_param", ""),
-        multi_values=data.get("multi_values", []),
+        multi_params=multi_params if multi_params else None,
+        multi_expressions=multi_expressions if multi_expressions else None,
         runner_name=data.get("runner_name", "default"),
-        multi_expression=data.get("multi_expression", "")
     )
     return web.json_response(app_response(data=result_id))
 

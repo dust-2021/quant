@@ -115,9 +115,12 @@ export interface DataIntegrityResult {
 
 export async function checkDataIntegrity(
   exchange: string, code: string, period: number, start: number, end: number
-): Promise<DataIntegrityResult | null> {
+): Promise<DataIntegrityResult | string> {
   const resp = await fetch<DataIntegrityResult>(
     `/api/data_center/check_data?exchange=${encodeURIComponent(exchange)}&code=${encodeURIComponent(code)}&period=${period}&start=${start}&end=${end}`, 'GET')
-  if (resp === null || resp.code !== 0) return null
-  return resp.data || null
+  if (resp === null || resp.code !== 0) {
+      console.log(resp.msg);
+      return resp.msg ?? '未知错误'; 
+  }
+  return resp.data ?? '';
 }

@@ -50,21 +50,28 @@ class Core():
             factors = (await s.execute(select(Factor).filter(Factor.uuid.in_(factor_uuids)))).scalars().all()
             if set(factor_uuids) != set([x.uuid for x in factors]):
                 raise ValueError(f"factors {factor_uuids} not found")
+            
+            factors_map: t.Dict[str, Factor] = {str(x.uuid): x for x in factors}
 
+        factor_src: t.List[t.Dict[str, t.Any]] = []
+        for u in factor_uuids:
+            f = factors_map.get(u)
+            if f is None:
+                raise ValueError(f'因子未找到，uuid-{u}')
+            factor_src.append({
+                    'name': f.name,
+                    'uuid': f.uuid,
+                    'content': f.content,
+                    'params': t.cast(list, f.params),
+                })
+        
         return {
             'strategy': {
-                'name': t.cast(str, stra.name),
-                'content': t.cast(str, stra.content),
+                'name': stra.name,
+                'content': stra.content,
                 'params': t.cast(list, stra.params),
             },
-            'factors': [
-                {
-                    'name': t.cast(str, f.name),
-                    'content': t.cast(str, f.content),
-                    'params': t.cast(list, f.params),
-                }
-                for f in factors
-            ],
+            'factors': factor_src
         }
     
     def __init__(self):
@@ -76,12 +83,3 @@ class Core():
         提交策略计算任务，返回任务id
         """
         cls._pool.submit(f, *args, **kwargs)
-    
-    @classmethod
-    def map_task(cls, f: t.Callable, *iterables):
-        """
-        提交多个策略计算任务（非阻塞，立即返回）。
-        每个任务通过 args[0] 作为 task_id 存入 _result。
-        """
-        for args in zip(*iterables):
-            cls._pool.submit(f, *args)

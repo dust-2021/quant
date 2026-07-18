@@ -4,7 +4,7 @@ BASE_PATH = os.getcwd()
 
 class Config:
     """
-    配置存储关键字，所有配置存于数据库的名称
+    配置默认值，当db中未存有时使用
     """
     Port = 5000
     BaseLog = 'INFO'

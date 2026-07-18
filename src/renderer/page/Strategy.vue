@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ElButton, ElCol, ElFormItem, ElInput, ElMessage, ElMessageBox, ElOption, ElRow, ElScrollbar, ElSelect, ElTabPane, ElTabs, ElDialog, ElCollapse, ElCollapseItem, ElTag, ElTooltip, MessageBoxInputData } from 'element-plus';
+import { ElButton, ElCheckbox, ElCol, ElFormItem, ElInput, ElMessage, ElMessageBox, ElOption, ElRow, ElScrollbar, ElSelect, ElTabPane, ElTabs, ElDialog, ElCollapse, ElCollapseItem, ElTag, ElTooltip, MessageBoxInputData } from 'element-plus';
 import { ref, computed, onBeforeMount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {Monaco} from 'vue-shiki-monaco';
@@ -170,12 +170,9 @@ async function run() {
     runForm.value.targets = [];
     runForm.value.period = 3600;
     runForm.value.runner_name = 'default';
-    runForm.value.multi = false;
-    runForm.value.multi_param = '';
-    runForm.value.multi_values = [];
+    runForm.value.multiEnabled = false;
     runForm.value.targetInput = '';
-    runForm.value.multiValueInput = '';
-    runForm.value.multiExpressionInput = '';
+    multiParamRows.value = [];
     // 加载执行器列表
     runnerList.value = await getRunnerList();
 }
@@ -190,12 +187,16 @@ interface RunForm {
     targets: string[];
     period: number;
     runner_name: string;
-    multi: boolean;
-    multi_param: string;
-    multi_values: (string | number | boolean)[];
+    multiEnabled: boolean;
     targetInput: string;
-    multiValueInput: string;
-    multiExpressionInput: string;
+}
+
+interface MultiParamRow {
+    paramKey: string;     // 带前缀: "_strategy.{param}" 或 "_factor.{uuid}.{param}"
+    valueInput: string;
+    values: (string | number | boolean)[];
+    expression: string;   // Python 列表推导式，非空时优先于 values
+    useExpression: boolean;
 }
 
 const runForm = ref<RunForm>({
@@ -204,13 +205,11 @@ const runForm = ref<RunForm>({
     targets: [],
     period: 3600,
     runner_name: 'default',
-    multi: false,
-    multi_param: '',
-    multi_values: [],
+    multiEnabled: false,
     targetInput: '',
-    multiValueInput: '',
-    multiExpressionInput: '',
 });
+
+const multiParamRows = ref<MultiParamRow[]>([]);
 
 const periodOptions = [
     { label: '秒', value: 1 },
@@ -232,31 +231,83 @@ function removeTarget(idx: number) {
     runForm.value.targets.splice(idx, 1);
 }
 
-function addMultiValue() {
-    const raw = runForm.value.multiValueInput.trim();
-    if (!raw) return;
-    const param = strategy.value?.params.find(p => p.name === runForm.value.multi_param);
-    const val = convertMultiValue(raw, param?.type);
-    if (!runForm.value.multi_values.includes(val)) {
-        runForm.value.multi_values.push(val);
+// ===== 多参数并行 =====
+// 收集所有可选参数（带前缀键，避免重名）
+interface ParamOption { key: string; label: string }
+const allParamOptions = computed(() => {
+  const options: ParamOption[] = []
+  if (strategy.value?.params) {
+    for (const p of strategy.value.params) {
+      options.push({ key: `_strategy.${p.name}`, label: `${p.name} (策略)` })
     }
-    runForm.value.multiValueInput = '';
+  }
+  if ((strategy.value as any)?.factor_infos) {
+    for (const fi of (strategy.value as any).factor_infos) {
+      if (fi.params) {
+        for (const p of fi.params) {
+          options.push({ key: `_factor.${fi.uuid}.${p.name}`, label: `${p.name} (因子:${fi.name})` })
+        }
+      }
+    }
+  }
+  return options
+})
+
+// 笛卡尔积数量（表达式不计入客户端计算，由服务端校验）
+const cartesianCount = computed(() => {
+  let count = 1
+  let hasExpr = false
+  for (const row of multiParamRows.value) {
+    if (row.useExpression && row.expression.trim()) { hasExpr = true; continue }
+    if (row.values.length > 0) count *= row.values.length
+  }
+  return { count, hasExpr }
+})
+const cartesianExceeded = computed(() => cartesianCount.value.count > 1000)
+
+function addMultiParamRow() {
+  multiParamRows.value.push({ paramKey: '', valueInput: '', values: [], expression: '', useExpression: false })
+}
+
+function removeMultiParamRow(idx: number) {
+  multiParamRows.value.splice(idx, 1)
+}
+
+function addMultiValue(row: MultiParamRow) {
+  const raw = row.valueInput.trim()
+  if (!raw || !row.paramKey) return
+  // 查找参数类型（去掉前缀后匹配）
+  const parts = row.paramKey.split('.')
+  const pureName = parts.length >= 2 ? parts.slice(-1)[0] : row.paramKey
+  let pType: ParamType | undefined
+  for (const p of strategy.value?.params || []) {
+    if (p.name === pureName) { pType = p.type; break }
+  }
+  if (!pType && (strategy.value as any)?.factor_infos) {
+    for (const fi of (strategy.value as any).factor_infos) {
+      for (const p of (fi.params || [])) {
+        if (p.name === pureName) { pType = p.type; break }
+      }
+    }
+  }
+  const val = convertMultiValue(raw, pType)
+  if (!row.values.includes(val)) {
+    row.values.push(val)
+  }
+  row.valueInput = ''
 }
 
 function convertMultiValue(raw: string, type?: ParamType): string | number | boolean {
-    if (!type) return raw;
-    switch (type) {
-        case ParamType.Number:
-            return Number(raw);
-        case ParamType.Boolean:
-            return raw.toLowerCase() === 'true' || raw === '1';
-        default:
-            return raw;
-    }
+  if (!type) return raw
+  switch (type) {
+    case ParamType.Number: return Number(raw)
+    case ParamType.Boolean: return raw.toLowerCase() === 'true' || raw === '1'
+    default: return raw
+  }
 }
 
-function removeMultiValue(idx: number) {
-    runForm.value.multi_values.splice(idx, 1);
+function removeMultiValue(row: MultiParamRow, vIdx: number) {
+  row.values.splice(vIdx, 1)
 }
 
 async function confirmRun() {
@@ -272,6 +323,12 @@ async function confirmRun() {
     }
     if (!strategy.value) return;
 
+    // 校验多参数
+    if (runForm.value.multiEnabled && cartesianExceeded.value) {
+        ElMessage.error(`参数组合数 ${cartesianCount.value.count} 超过上限 1000，请减少参数或取值`);
+        return;
+    }
+
     const payload: {
         uuid: string;
         start_time: number;
@@ -279,10 +336,8 @@ async function confirmRun() {
         target?: string[];
         period?: number;
         runner_name?: string;
-        multi?: boolean;
-        multi_param?: string;
-        multi_values?: (string | number | boolean)[];
-        multi_expression?: string;
+        multi_params?: Record<string, (string | number | boolean)[]>;
+        multi_expressions?: Record<string, string>;
     } = {
         uuid: strategy.value.uuid,
         start_time: startTime,
@@ -293,22 +348,32 @@ async function confirmRun() {
     if (runForm.value.targets.length > 0) {
         payload.target = runForm.value.targets;
     }
-    if (runForm.value.multi) {
-        payload.multi = true;
-        payload.multi_param = runForm.value.multi_param;
-        payload.multi_values = runForm.value.multi_values;
-        if (runForm.value.multiExpressionInput.trim()) {
-            payload.multi_expression = runForm.value.multiExpressionInput.trim();
+    if (runForm.value.multiEnabled && multiParamRows.value.length > 0) {
+        const mp: Record<string, (string | number | boolean)[]> = {};
+        const me: Record<string, string> = {};
+        for (const row of multiParamRows.value) {
+            if (!row.paramKey) continue;
+            if (row.useExpression && row.expression.trim()) {
+                me[row.paramKey] = row.expression.trim();
+            } else if (row.values.length > 0) {
+                mp[row.paramKey] = [...row.values];
+            }
         }
+        if (Object.keys(mp).length > 0) payload.multi_params = mp;
+        if (Object.keys(me).length > 0) payload.multi_expressions = me;
     }
 
     const resp = await executeStrategy(payload);
     if (resp.code === 0) {
-        // 注册任务到全局任务面板
         const taskStore = StrategyResultStore();
         const resultIds = resp.data;
         if (!resultIds) return;
-        taskStore.addTasks(resultIds, strategy.value?.name || '', runForm.value.runner_name, runForm.value.multi_param, runForm.value.multi_values);
+        // 收集所有多参数键名（含表达式键）
+        const allKeys = [
+            ...Object.keys(payload.multi_params || {}),
+            ...Object.keys(payload.multi_expressions || {}),
+        ];
+        taskStore.addTasks(resultIds, strategy.value?.name || '', runForm.value.runner_name, allKeys);
 
         ElMessage.success('策略已提交运行');
         showRunDialog.value = false;
@@ -713,42 +778,50 @@ watch(() => props.uuid, async (newUuid) => {
                     </ElSelect>
                 </ElFormItem>
                 <ElFormItem label="并行回测">
-                    <ElCheckbox v-model="runForm.multi">启用多参数并行回测</ElCheckbox>
+                    <ElCheckbox v-model="runForm.multiEnabled">启用多参数并行回测</ElCheckbox>
+                    <span v-if="runForm.multiEnabled && multiParamRows.length > 0" style="margin-left: 8px; font-size: 12px;">
+                        组合数: <b :style="{ color: cartesianExceeded ? '#f56c6c' : '#67c23a' }">{{ cartesianCount.count }}</b>
+                        <span v-if="cartesianCount.hasExpr" style="color: #e6a23c;"> (含表达式)</span>
+                        <span v-if="cartesianExceeded" style="color: #f56c6c;"> (超过上限 1000)</span>
+                    </span>
                 </ElFormItem>
-                <template v-if="runForm.multi">
-                    <ElFormItem label="并行参数">
-                        <ElSelect v-model="runForm.multi_param" placeholder="选择要并行的参数" style="width: 100%;">
-                            <ElOption v-for="p in strategy.params" :key="p.name" :label="p.name" :value="p.name"/>
-                        </ElSelect>
-                    </ElFormItem>
-                    <ElFormItem label="参数值">
-                        <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                <template v-if="runForm.multiEnabled">
+                    <div v-for="(row, idx) in multiParamRows" :key="idx" style="margin-bottom: 8px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 6px;">
+                        <ElFormItem :label="`参数 ${idx + 1}`" style="margin-bottom: 4px;">
+                            <div style="display: flex; gap: 8px; align-items: center; width: 100%; flex-wrap: wrap;">
+                                <ElSelect v-model="row.paramKey" placeholder="选择参数" style="width: 220px;" filterable>
+                                    <ElOption v-for="opt in allParamOptions" :key="opt.key" :label="opt.label" :value="opt.key"/>
+                                </ElSelect>
+                                <ElButton size="small" :type="row.useExpression ? 'warning' : ''" @click="row.useExpression = !row.useExpression">
+                                    {{ row.useExpression ? '手动输入' : '表达式' }}
+                                </ElButton>
+                                <ElButton type="danger" size="small" circle @click="removeMultiParamRow(idx)">✕</ElButton>
+                            </div>
+                        </ElFormItem>
+                        <!-- 表达式模式 -->
+                        <div v-if="row.useExpression && row.paramKey" style="margin-left: 80px;">
+                            <ElInput v-model="row.expression" placeholder="输入 Python 列表推导式，如: [i/10 for i in range(1,21)]" size="small" style="width: 100%; max-width: 500px;" />
+                            <div style="font-size: 11px; color: #909399; margin-top: 2px;">支持 range, len, int, float, abs, min, max, round, sum</div>
+                        </div>
+                        <!-- 手动输入模式 -->
+                        <div v-if="!row.useExpression && row.paramKey" style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-left: 80px;">
                             <ElTag
-                                v-for="(v, idx) in runForm.multi_values"
-                                :key="idx"
-                                closable
-                                size="small"
-                                type="warning"
-                                @close="removeMultiValue(idx)"
+                                v-for="(v, vIdx) in row.values"
+                                :key="vIdx"
+                                closable size="small" type="warning"
+                                @close="removeMultiValue(row, vIdx)"
                             >{{ v }}</ElTag>
                             <ElInput
-                                v-model="runForm.multiValueInput"
+                                v-model="row.valueInput"
                                 placeholder="输入后回车添加"
                                 size="small"
-                                style="width: 160px;"
-                                @keyup.enter="addMultiValue"
+                                style="width: 140px;"
+                                @keyup.enter="addMultiValue(row)"
                             />
                         </div>
-                    </ElFormItem>
-                    <ElFormItem label="列表推导式">
-                        <ElInput
-                            v-model="runForm.multiExpressionInput"
-                            placeholder="如: [i/10 for i in range(1, 21)]"
-                            style="width: 100%;"
-                        />
-                        <div style="font-size: 12px; color: #909399; margin-top: 4px;">
-                            Python 列表推导式，优先级高于上方的参数值列表。支持 range, len, int, float, abs, min, max, round, sum
-                        </div>
+                    </div>
+                    <ElFormItem>
+                        <ElButton size="small" @click="addMultiParamRow">+ 添加参数</ElButton>
                     </ElFormItem>
                 </template>
             </ElForm>

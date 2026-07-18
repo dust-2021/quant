@@ -8,7 +8,7 @@ def run(
     df: pd.DataFrame,
     ctx: t.Dict[str, t.Any],
     params: t.Dict[str, t.Any],
-    is_multi: bool,
+    multi_params: t.Dict[str, t.Any],
 ):
     if df["code"].nunique() != 1:
         raise ValueError("default runner 只支持单code回测")
@@ -104,7 +104,7 @@ def run(
         "liquidation": int(liquidation_date) if liquidation_date is not None else None,  # 爆仓
         "premium": (df["__premium"] * df[funding_col]).sum(),  # 手续费
         "data": None
-        if is_multi
+        if multi_params
         else df.to_json(index=False, orient="records"),  # 计算数据
         "maximumDrawdown": -df["__drawdown"].min()
         if df["__drawdown"].min() < 0

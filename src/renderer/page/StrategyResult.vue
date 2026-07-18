@@ -13,20 +13,18 @@ import ResultChartOfDefault from '../element/ResultChartOfDefault.vue'
 interface TaskMeta {
   strategyName: string
   runnerName: string
-  multiParam: string
-  multiValues: (string | number | boolean)[]
+  multiParamKeys: string[]   // ["_strategy.leverage", "_factor.uuid.window"]
   subIds?: string[]
 }
 
 interface SubResult {
   id: string
-  value: string
+  /** 多参数值，key 为纯净参数名 */
+  paramDisplay: Record<string, string>
   status: 'success' | 'failed' | 'loading'
   result?: taskResult
   error?: string
-  /** 预解析的交易数据行 */
   tradeRows?: any[]
-  /** 交易数据中的信号列名 */
   signalCol?: string
 }
 
@@ -58,6 +56,18 @@ const metricLabels: Record<string, string> = {
   maximumLoss: '最大亏损 (%)',
   averageProfitLossRatio: '平均盈亏比',
 }
+
+/** 指标列的排序方法 */
+const metricSortFns = Object.fromEntries(
+  Object.keys(metricLabels).map(key => [key, (a: SubResult, b: SubResult) => {
+    const va = a.result?.[key as keyof taskResult]
+    const vb = b.result?.[key as keyof taskResult]
+    if (va == null && vb == null) return 0
+    if (va == null) return 1
+    if (vb == null) return -1
+    return (Number(va) || 0) - (Number(vb) || 0)
+  }])
+)
 
 function parseTradeData(json: string | undefined): any[] {
   if (!json) return []
@@ -136,11 +146,15 @@ function initSubResult(sr: SubResult) {
     sr.tradeRows = parseTradeData(sr.result.tradeData)
     sr.signalCol = detectSignalCol(sr.result.params)
   }
-  // 从实际执行参数中获取并行参数值
-  if (sr.result?.params && meta.value?.multiParam) {
-    const v = sr.result.params[meta.value.multiParam]
-    if (v !== undefined && v !== null) {
-      sr.value = String(v)
+  // 从执行参数中提取多参数值（按纯净参数名去前缀）
+  sr.paramDisplay = {}
+  if (sr.result?.params && meta.value?.multiParamKeys) {
+    for (const key of meta.value.multiParamKeys) {
+      const pureName = key.includes('.') ? key.split('.').slice(-1)[0] : key
+      const v = sr.result.params[pureName]
+      if (v !== undefined && v !== null) {
+        sr.paramDisplay[pureName] = String(v)
+      }
     }
   }
 }
@@ -152,10 +166,9 @@ async function loadResult() {
   }
 
   if (meta.value?.subIds && meta.value.subIds.length > 1) {
-    const multiValues = meta.value.multiValues || []
-    subResults.value = meta.value.subIds.map((subId, i) => ({
+    subResults.value = meta.value.subIds.map((subId) => ({
       id: subId,
-      value: String(multiValues[i] ?? subId.slice(0, 8)),
+      paramDisplay: {},
       status: 'loading' as const,
     }))
     const promises = subResults.value.map(async (sr) => {
@@ -164,16 +177,19 @@ async function loadResult() {
         const result = resp.data as taskResult
         sr.status = 'success'
         sr.result = result
-        // 订单数据
         if (result.tradeData) {
           sr.tradeRows = parseTradeData(result.tradeData)
           sr.signalCol = detectSignalCol(result.params)
         }
-        // 从实际执行参数中提取并行参数值
-        if (result.params && meta.value?.multiParam) {
-          const v = result.params[meta.value.multiParam]
-          if (v !== undefined && v !== null) {
-            sr.value = String(v)
+        // 提取多参数值
+        sr.paramDisplay = {}
+        if (result.params && meta.value?.multiParamKeys) {
+          for (const key of meta.value.multiParamKeys) {
+            const pureName = key.includes('.') ? key.split('.').slice(-1)[0] : key
+            const v = result.params[pureName]
+            if (v !== undefined && v !== null) {
+              sr.paramDisplay[pureName] = String(v)
+            }
           }
         }
       } else {
@@ -203,12 +219,12 @@ onBeforeMount(() => {
     <div class="result-header">
       <h3>回测结果</h3>
       <span v-if="meta?.strategyName" class="result-header__name">{{ meta.strategyName }}</span>
-      <ElTag v-if="meta?.multiParam" type="info" size="small" effect="plain">
-        并行: {{ meta.multiParam }}
+      <ElTag v-if="meta?.multiParamKeys?.length" type="info" size="small" effect="plain">
+        并行: {{ meta.multiParamKeys.length }} 参数
       </ElTag>
     </div>
 
-    <ElScrollbar>
+    <div class="result-body">
       <!-- 加载中 -->
       <ElSkeleton v-if="loading" :rows="6" animated />
 
@@ -230,14 +246,19 @@ onBeforeMount(() => {
         </template>
         <!-- 指标汇总表 -->
         <h4 style="margin: 0 0 8px;">指标对比</h4>
-        <ElTable :data="subResults" stripe size="small" style="width: 100%; margin-bottom: 16px;">
-          <ElTableColumn prop="value" :label="meta?.multiParam || '参数值'" width="120" fixed="left">
+        <ElTable :data="subResults" stripe size="small" max-height="400" style="width: 100%; margin-bottom: 16px;">
+          <ElTableColumn v-for="key in meta?.multiParamKeys || []" :key="key"
+            :label="key.includes('.') ? key.split('.').slice(-1)[0] : key"
+            :min-width="100" fixed="left" :prop="key" sortable
+          >
             <template #default="{ row }">
-              <span :style="{ fontWeight: 500 }">{{ row.value }}</span>
+              <span :style="{ fontWeight: 500 }">{{ row.paramDisplay?.[key.includes('.') ? key.split('.').slice(-1)[0] : key] ?? '-' }}</span>
               <ElTag v-if="row.status === 'failed'" type="danger" size="small" effect="plain" style="margin-left: 4px;">失败</ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn v-for="(label, key) in metricLabels" :key="key" :label="label" min-width="100" align="right">
+          <ElTableColumn v-for="(label, key) in metricLabels" :key="key" :label="label" min-width="100" align="right"
+            sortable :sort-method="metricSortFns[key]" :prop="key"
+          >
             <template #default="{ row }">
               <span v-if="row.status === 'success' && row.result">{{ formatMetric(row.result[key as keyof taskResult]) }}</span>
               <span v-else style="color: var(--el-color-danger);">-</span>
@@ -247,7 +268,7 @@ onBeforeMount(() => {
 
         <!-- 失败任务错误 -->
         <ElAlert v-for="sr in subResults.filter(s => s.status === 'failed')" :key="sr.id"
-          :title="`${meta?.multiParam || '参数'} = ${sr.value} 执行失败`" type="error" show-icon :closable="false"
+          :title="`执行失败 (${Object.entries(sr.paramDisplay).map(([k, v]) => `${k}=${v}`).join(', ') || sr.id.slice(0, 8)})`" type="error" show-icon :closable="false"
           style="margin-bottom: 8px;">
           <template #default><pre class="error-trace" style="max-height: 120px;">{{ sr.error }}</pre></template>
         </ElAlert>
@@ -255,9 +276,9 @@ onBeforeMount(() => {
         <!-- 订单详情：下拉选择参数 -->
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
           <h4 style="margin: 0;">交易订单</h4>
-          <ElSelect v-model="selectedSubIndex" size="small" style="width: 180px;">
+          <ElSelect v-model="selectedSubIndex" size="small" style="width: 240px;">
             <ElOption v-for="(sr, idx) in subResults.filter(s => s.status === 'success')" :key="sr.id"
-              :label="`${meta?.multiParam || '参数'} = ${sr.value}`" :value="idx" />
+              :label="Object.entries(sr.paramDisplay).map(([k, v]) => `${k}=${v}`).join(', ') || sr.id.slice(0, 8)" :value="idx" />
           </ElSelect>
         </div>
         <ElTable
@@ -265,22 +286,22 @@ onBeforeMount(() => {
           :data="selectedSubResult.tradeRows"
           stripe size="small" max-height="300" style="width: 100%;"
         >
-          <ElTableColumn prop="open_time" label="开仓时间" width="160">
+          <ElTableColumn prop="open_time" label="开仓时间" width="160" sortable>
             <template #default="{ row }">{{ formatTime(row.open_time) }}</template>
           </ElTableColumn>
-          <ElTableColumn :label="selectedSubResult.signalCol || '信号'" width="80">
+          <ElTableColumn :label="selectedSubResult.signalCol || '信号'" width="80" sortable>
             <template #default="{ row }">{{ row[selectedSubResult.signalCol || 'signal'] }}</template>
           </ElTableColumn>
-          <ElTableColumn prop="open" label="开" width="100" />
-          <ElTableColumn prop="high" label="高" width="100" />
-          <ElTableColumn prop="low" label="低" width="100" />
-          <ElTableColumn prop="close" label="收" width="100" />
-          <ElTableColumn prop="__timeSell" label="平仓时间" width="160">
+          <ElTableColumn prop="open" label="开" width="100" sortable />
+          <ElTableColumn prop="high" label="高" width="100" sortable />
+          <ElTableColumn prop="low" label="低" width="100" sortable />
+          <ElTableColumn prop="close" label="收" width="100" sortable />
+          <ElTableColumn prop="__timeSell" label="平仓时间" width="160" sortable>
             <template #default="{ row }">{{ formatTime(row.__timeSell) }}</template>
           </ElTableColumn>
-          <ElTableColumn prop="__priceBuy" label="买入价" width="100" />
-          <ElTableColumn prop="__priceSell" label="卖出价" width="100" />
-          <ElTableColumn prop="__income" label="收益率" width="100">
+          <ElTableColumn prop="__priceBuy" label="买入价" width="100" sortable />
+          <ElTableColumn prop="__priceSell" label="卖出价" width="100" sortable />
+          <ElTableColumn prop="__income" label="收益率" width="100" sortable>
             <template #default="{ row }">{{ row.__income != null ? (row.__income * 100).toFixed(2) + '%' : '-' }}</template>
           </ElTableColumn>
         </ElTable>
@@ -335,28 +356,28 @@ onBeforeMount(() => {
                 max-height="400"
                 style="width: 100%;"
               >
-                <ElTableColumn prop="open_time" label="开仓时间" width="160">
+                <ElTableColumn prop="open_time" label="开仓时间" width="160" sortable>
                   <template #default="{ row }">
                     {{ formatTime(row.open_time) }}
                   </template>
                 </ElTableColumn>
-                <ElTableColumn :label="singleSignalCol" width="80">
+                <ElTableColumn :label="singleSignalCol" width="80" sortable>
                   <template #default="{ row }">
                     {{ row[singleSignalCol] }}
                   </template>
                 </ElTableColumn>
-                <ElTableColumn prop="open" label="开" width="100" />
-                <ElTableColumn prop="high" label="高" width="100" />
-                <ElTableColumn prop="low" label="低" width="100" />
-                <ElTableColumn prop="close" label="收" width="100" />
-                <ElTableColumn prop="__timeSell" label="平仓时间" width="160">
+                <ElTableColumn prop="open" label="开" width="100" sortable />
+                <ElTableColumn prop="high" label="高" width="100" sortable />
+                <ElTableColumn prop="low" label="低" width="100" sortable />
+                <ElTableColumn prop="close" label="收" width="100" sortable />
+                <ElTableColumn prop="__timeSell" label="平仓时间" width="160" sortable>
                   <template #default="{ row }">
                     {{ formatTime(row.__timeSell) }}
                   </template>
                 </ElTableColumn>
-                <ElTableColumn prop="__priceBuy" label="买入价" width="100" />
-                <ElTableColumn prop="__priceSell" label="卖出价" width="100" />
-                <ElTableColumn prop="__income" label="收益率" width="100">
+                <ElTableColumn prop="__priceBuy" label="买入价" width="100" sortable />
+                <ElTableColumn prop="__priceSell" label="卖出价" width="100" sortable />
+                <ElTableColumn prop="__income" label="收益率" width="100" sortable>
                   <template #default="{ row }">
                     {{ row.__income != null ? (row.__income * 100).toFixed(2) + '%' : '-' }}
                   </template>
@@ -367,7 +388,7 @@ onBeforeMount(() => {
           </ElTabs>
         </template>
       </template>
-    </ElScrollbar>
+    </div>
   </div>
 </template>
 
@@ -378,69 +399,34 @@ onBeforeMount(() => {
   flex-direction: column;
   padding: 16px;
   box-sizing: border-box;
-  background-color: var(--bg-page);
+  overflow: hidden;
 }
-
 .result-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
   flex-shrink: 0;
-}
-
-.result-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.result-header__name {
-  color: var(--text-secondary);
-  font-size: 14px;
-  flex: 1;
-}
-
-.sub-result-title {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 12px;
 }
-
+.result-header h3 { margin: 0; }
+.result-header__name { color: var(--text-secondary); font-size: 14px; }
+.result-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
 .time-info {
   font-size: 13px;
   color: var(--text-secondary);
   margin-bottom: 12px;
   line-height: 1.6;
 }
-
 .error-trace {
-  background-color: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 4px;
-  padding: 12px;
-  max-height: 300px;
-  overflow: auto;
-  font-family: 'Courier New', Courier, monospace;
+  margin: 0;
+  font-family: 'Courier New', monospace;
   font-size: 12px;
-  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
-  margin: 0;
-}
-
-.chart-container {
-  width: 100%;
-  height: 420px;
-}
-
-.chart-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  gap: 12px;
-  color: var(--text-secondary);
 }
 </style>
