@@ -289,31 +289,41 @@ async function loadResult() {
 
 async function handleSaveResult() {
   try {
+    const isMulti = subResults.value.length > 0
+    const baseResult = isMulti ? firstSuccessResult.value : singleResult.value
+    if (!baseResult) return
     const { value: name } = await ElMessageBox.prompt('请输入保存名称', '保存回测结果', {
       confirmButtonText: '保存', cancelButtonText: '取消',
       inputValue: meta.value?.strategyName || '',
     })
-    if (!name || !singleResult.value) return
+    if (!name) return
     const payload: any = {
       result_uuid: taskId, name,
       strategy_uid: meta.value?.strategyUid || '',
       strategy_version: meta.value?.strategyVersion || '',
-      exec_start_time: singleResult.value.startTime, exec_end_time: singleResult.value.endTime,
-      period: singleResult.value.period, targets: singleResult.value.target,
+      exec_start_time: Math.floor(baseResult.startTime / 1000), exec_end_time: Math.floor(baseResult.endTime / 1000),
+      period: baseResult.period, targets: baseResult.target,
       runner_name: meta.value?.runnerName || 'default',
       metrics: {},
-      strategy_params: firstSuccessResult.value?.params || singleResult.value.params,
+      strategy_params: baseResult.params,
       factor_snapshots: meta.value?.factorSnapshots || savedInfo.value?.factorSnapshots || null,
-      trade_data: singleResult.value.tradeData,
-      chart_data: singleResult.value.data,
+      trade_data: isMulti ? null : singleResult.value?.tradeData || null,
+      chart_data: isMulti ? null : singleResult.value?.data || null,
       multi_param_keys: meta.value?.multiParamKeys || [],
     }
-    // 提取指标
-    for (const key of Object.keys(metricLabels)) {
-      payload.metrics[key] = singleResult.value[key as keyof taskResult]
+    // 指标
+    if (isMulti) {
+      // 多参数：metrics 填第一个成功结果
+      for (const key of Object.keys(metricLabels)) {
+        payload.metrics[key] = baseResult[key as keyof taskResult]
+      }
+    } else {
+      for (const key of Object.keys(metricLabels)) {
+        payload.metrics[key] = singleResult.value![key as keyof taskResult]
+      }
     }
     // 多参数子结果
-    if (subResults.value.length > 0) {
+    if (isMulti) {
       payload.multi_results = subResults.value.map(sr => ({
         key_values: sr.paramDisplay,
         metrics: sr.result ? Object.fromEntries(
@@ -344,7 +354,7 @@ onBeforeMount(() => {
       <ElTag v-if="meta?.multiParamKeys?.length" type="info" size="small" effect="plain">
         并行: {{ meta.multiParamKeys.length }} 参数
       </ElTag>
-      <ElButton v-if="!isSaved && singleResult" size="small" type="success" style="margin-left: auto;" @click="handleSaveResult">保存结果</ElButton>
+      <ElButton v-if="!isSaved && (singleResult || subResults.length > 0)" size="small" type="success" style="margin-left: auto;" @click="handleSaveResult">保存结果</ElButton>
     </div>
 
     <div class="result-body">
