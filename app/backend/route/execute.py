@@ -38,16 +38,19 @@ async def execute_strategy(
             else:
                 multi_params[k] = [v]
     multi_expressions: t.Dict[str, str] = data.get("multi_expressions", {}) or {}
-    result_id = await Calculator.async_task(
-        strategy_uuid=data["uuid"],
-        start_time=data["start_time"],
-        end_time=data["end_time"],
-        target=data.get("target"),
-        period=period,
-        multi_params=multi_params if multi_params else None,
-        multi_expressions=multi_expressions if multi_expressions else None,
-        runner_name=data.get("runner_name", "default"),
-    )
+    try:
+        result_id = await Calculator.async_task(
+            strategy_uuid=data["uuid"],
+            start_time=data["start_time"],
+            end_time=data["end_time"],
+            target=data.get("target"),
+            period=period,
+            multi_params=multi_params if multi_params else None,
+            multi_expressions=multi_expressions if multi_expressions else None,
+            runner_name=data.get("runner_name", "default"),
+        )
+    except Exception as e:
+        return web.json_response(app_response(code=AppCode.UNKNOWN_ERROR, msg=e.__str__()))
     return web.json_response(app_response(data=result_id))
 
 # NaN 替换为 None，确保 JSON 序列化安全

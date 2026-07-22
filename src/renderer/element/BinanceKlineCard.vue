@@ -1,6 +1,8 @@
 <script lang="ts" setup>
 import { ref, computed, onBeforeMount, onBeforeUnmount, nextTick } from 'vue'
+import { ElInput } from 'element-plus'
 import { Binance, eventData, binanceInterval, tradeType } from '../../exchanges/binance'
+import { getSetting, setSetting } from '../../api/setting'
 import * as echarts from 'echarts'
 
 // ===== 配置 =====
@@ -14,14 +16,23 @@ const INTERVAL_MS: Record<string, number> = {
 const INTERVALS: binanceInterval[] = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M']
 const TRADE_TYPES: tradeType[] = ['spot', 'swap']
 
-type KlineItem = { time: number; open: number; close: number; high: number; low: number; volume?: number }
+type KlineItem = { time: number; open: number; close: number; high: number; low: number; amount?: number }
 
 const target = ref('BTCUSDT')
 const interval = ref<binanceInterval>('1h')
 const t = ref<tradeType>('swap')
 const showIntervalPicker = ref(false)
 const showTradeTypePicker = ref(false)
+const showSymbolPicker = ref(false)
+const symbolSearch = ref('')
+const allSymbols = ref<string[]>([])
+const symbolsLoading = ref(false)
 const currentStream = computed(() => `${target.value.toLowerCase()}@kline_${interval.value}`)
+const filteredSymbols = computed(() => {
+  const kw = symbolSearch.value.toUpperCase().trim()
+  if (!kw) return allSymbols.value.slice(0, 100)
+  return allSymbols.value.filter(s => s.includes(kw)).slice(0, 100)
+})
 const binance = Binance.getInstance()
 
 // ===== K线数据 =====
@@ -38,22 +49,22 @@ const resizeObserver = new ResizeObserver(() => {
 })
 
 // 构建 ECharts 所需的全部数据（历史 + 当前）
-function buildChartData(): { candlestick: any[]; volumes: any[]; times: string[] } {
+function buildChartData(): { candlestick: any[]; amounts: any[]; times: string[] } {
   const candlestick: any[] = []
-  const volumes: any[] = []
+  const amounts: any[] = []
   const times: string[] = []
   for (const item of historyData.value) {
     candlestick.push([item.open, item.close, item.low, item.high])
-    volumes.push([candlestick.length - 1, item.volume ?? 0, item.close >= item.open ? 1 : -1])
+    amounts.push([candlestick.length - 1, item.amount ?? 0, item.close >= item.open ? 1 : -1])
     times.push(formatTime(item.time))
   }
   if (currentCandle.value) {
     const c = currentCandle.value
     candlestick.push([c.open, c.close, c.low, c.high])
-    volumes.push([candlestick.length - 1, c.volume ?? 0, c.close >= c.open ? 1 : -1])
+    amounts.push([candlestick.length - 1, c.amount ?? 0, c.close >= c.open ? 1 : -1])
     times.push(formatTime(c.time))
   }
-  return { candlestick, volumes, times }
+  return { candlestick, amounts, times }
 }
 
 function formatTime(ts: number): string {
@@ -96,7 +107,7 @@ function initChart() {
         const time = params[0].axisValue
         let html = `<div style="font-weight:600;margin-bottom:4px;">${time}</div>`
         for (const p of params) {
-          if (p.seriesName === '成交量') continue
+          if (p.seriesName === '成交额') continue
           const d = p.data
           if (Array.isArray(d) && d.length >= 4) {
             const change = d[2] - d[1]
@@ -107,8 +118,8 @@ function initChart() {
           }
         }
         for (const p of params) {
-          if (p.seriesName !== '成交量') continue
-          html += `<div style="margin-top:2px;color:#999;">成交量 ${p.data?.[1] ?? '-'}</div>`
+          if (p.seriesName !== '成交额') continue
+          html += `<div style="margin-top:2px;color:#999;">成交额 ${p.data?.[1] ?? '-'}</div>`
         }
         return html
       },
@@ -138,7 +149,7 @@ function initChart() {
         },
       },
       {
-        name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
+        name: '成交额', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
         data: [],
         itemStyle: {
           color: (params: any) => params.data?.[2] === 1 ? upColor : downColor,
@@ -162,11 +173,11 @@ function scheduleChartUpdate() {
   rafId = requestAnimationFrame(() => {
     rafId = 0
     if (!chartInstance) return
-    const { candlestick, volumes, times } = buildChartData()
+    const { candlestick, amounts, times } = buildChartData()
     const priceLine = currentCandle.value ? [{ yAxis: currentCandle.value.close }] : []
     chartInstance.setOption({
       xAxis: [{ data: times }, { data: times }],
-      series: [{ data: candlestick, markLine: { data: priceLine } }, { data: volumes }],
+      series: [{ data: candlestick, markLine: { data: priceLine } }, { data: amounts }],
     } as any)
   })
 }
@@ -181,7 +192,7 @@ async function handle(r: eventData) {
     close: Number(k.c),
     high: Number(k.h),
     low: Number(k.l),
-    volume: Number(k.v),
+    amount: Number(k.q),  // 成交额
   }
 
   // 检测新K线开始（时间戳变化）
@@ -211,7 +222,7 @@ async function fetchMissingKline(prevTime: number) {
       const row = rows[0]
       const k: KlineItem = {
         time: Number(row[0]), open: Number(row[1]), high: Number(row[2]),
-        low: Number(row[3]), close: Number(row[4]), volume: Number(row[5]),
+        low: Number(row[3]), close: Number(row[4]), amount: Number(row[7]),
       }
       // 检查是否已存在（避免重复）
       const exists = historyData.value.some(h => h.time === k.time)
@@ -239,6 +250,9 @@ async function switchParams(newInterval?: binanceInterval, newType?: tradeType) 
   if (newInterval) interval.value = newInterval
   if (newType) t.value = newType
 
+  // 保存配置
+  saveCardConf()
+
   // 清空数据
   historyData.value = []
   currentCandle.value = null
@@ -257,7 +271,7 @@ async function loadHistoryAndSubscribe() {
     const rows = await binance.historyKline(target.value, interval.value, startTime, endTime, t.value)
     historyData.value = rows.map(row => ({
       time: Number(row[0]), open: Number(row[1]), high: Number(row[2]),
-      low: Number(row[3]), close: Number(row[4]), volume: Number(row[5]),
+      low: Number(row[3]), close: Number(row[4]), amount: Number(row[7]),
     }))
     if (historyData.value.length > 0) {
       const last = historyData.value.pop()!
@@ -273,16 +287,61 @@ async function loadHistoryAndSubscribe() {
   scheduleChartUpdate()
 
   // 订阅新的实时数据
-  binance.subscribeKline(currentStream.value, t.value, handle)
+  binance.subscribe(currentStream.value, t.value, handle)
 }
 
 // ===== 生命周期 =====
 function closeDropdowns() {
   showIntervalPicker.value = false
   showTradeTypePicker.value = false
+  showSymbolPicker.value = false
+}
+
+function saveCardConf() {
+  setSetting('binanceCardConf', { target: target.value, period: interval.value, t: t.value })
+}
+
+async function openSymbolPicker() {
+  showSymbolPicker.value = !showSymbolPicker.value
+  if (showSymbolPicker.value) {
+    showIntervalPicker.value = false
+    showTradeTypePicker.value = false
+    if (allSymbols.value.length === 0) {
+      symbolsLoading.value = true
+      try {
+        const info = await binance.exchangeInfo(t.value)
+        allSymbols.value = (info?.symbols || []).map(s => s.symbol).sort()
+      } finally {
+        symbolsLoading.value = false
+      }
+    }
+    symbolSearch.value = ''
+  }
+}
+
+async function selectSymbol(sym: string) {
+  if (sym === target.value) { showSymbolPicker.value = false; return }
+  showSymbolPicker.value = false
+  // 先取消旧订阅（必须在 target 变更前获取旧 stream 名）
+  const oldStream = currentStream.value
+  target.value = sym
+  saveCardConf()
+  binance.unsubscribe([oldStream], t.value)
+  historyData.value = []
+  currentCandle.value = null
+  lastKlineTime = 0
+  await loadHistoryAndSubscribe()
 }
 
 onBeforeMount(async () => {
+  // 从后端配置加载初始值
+  const conf = await getSetting<{ target: string; period: binanceInterval; t: tradeType }>('binanceCardConf')
+  if (conf) {
+    target.value = conf.target || 'BTCUSDT'
+    interval.value = conf.period || '1h'
+    t.value = conf.t || 'swap'
+  }
+
   await nextTick()
   if (chartRef.value) resizeObserver.observe(chartRef.value)
   document.addEventListener('click', closeDropdowns)
@@ -302,7 +361,19 @@ onBeforeUnmount(() => {
   <div class="kline-wrapper">
     <!-- 顶部信息栏 -->
     <div class="kline-header">
-      <span class="kline-symbol">{{ target }}</span>
+      <div class="kline-symbol" @click.stop="openSymbolPicker">
+        <span>{{ target }}</span>
+        <span class="kline-arrow">▾</span>
+        <div v-if="showSymbolPicker" class="kline-dropdown kline-dropdown--symbol" @click.stop>
+          <ElInput v-model="symbolSearch" placeholder="搜索标的" size="small" clearable style="margin: 4px 6px; width: calc(100% - 12px);" />
+          <div class="kline-dropdown__scroll">
+            <div v-for="sym in filteredSymbols" :key="sym"
+              :class="['kline-dropdown__item', { active: sym === target }]"
+              @click="selectSymbol(sym)">{{ sym }}</div>
+          </div>
+          <div v-if="symbolsLoading" style="text-align: center; padding: 8px; color: #999;">加载中...</div>
+        </div>
+      </div>
       <span class="kline-price" :style="{ color: currentCandle ? (currentCandle.close >= currentCandle.open ? upColor : downColor) : '#999' }">
         {{ currentCandle ? currentCandle.close.toPrecision(8) : '--' }}
       </span>
@@ -350,9 +421,30 @@ onBeforeUnmount(() => {
 }
 
 .kline-symbol {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   font-size: 16px;
   font-weight: 700;
   color: var(--text-primary, #e0e0e0);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+.kline-symbol:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.kline-dropdown--symbol {
+  width: 240px;
+  left: 0;
+  right: auto;
+}
+.kline-dropdown__scroll {
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .kline-price {

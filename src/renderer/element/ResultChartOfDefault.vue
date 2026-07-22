@@ -5,6 +5,7 @@ import * as echarts from 'echarts'
 
 const props = defineProps<{
   dataJson: string
+  signalCol?: string
 }>()
 
 const MAX_CHART_ROWS = 10000
@@ -17,6 +18,7 @@ const candlestickData = ref<any[]>([])
 const fundingData = ref<any[]>([])
 const drawdownData = ref<any[]>([])
 const volumeData = ref<any[]>([])
+const signalMarkData = ref<any[]>([])  // 信号竖线标注
 const allRows = ref<any[]>([])
 const dataCount = ref(0)
 const periodMs = ref(3600000)
@@ -37,6 +39,7 @@ function parseChartData() {
   fundingData.value = []
   drawdownData.value = []
   volumeData.value = []
+  signalMarkData.value = []
   allRows.value = []
   dataCount.value = 0
   chartDataTooLarge.value = false
@@ -55,15 +58,28 @@ function parseChartData() {
     if (arr.length >= 2) {
       periodMs.value = arr[1].open_time - arr[0].open_time
     }
-    // 提取可选字段
     if (arr.length > 0) {
       availableFields.value = Object.keys(arr[0]).filter(k => !knownFields.has(k))
     }
-    for (const row of arr) {
+    // 提取信号标注点
+    const sigCol = props.signalCol || 'signal'
+    for (let i = 0; i < arr.length; i++) {
+      const row = arr[i]
       candlestickData.value.push([row.open_time, row.open, row.close, row.low, row.high])
       fundingData.value.push(row.__funding ?? null)
       drawdownData.value.push(row.__drawdown ?? null)
       volumeData.value.push(row.quote_asset_volume ?? 0)
+      // 非空信号点添加竖线标注
+      const sigVal = row[sigCol]
+      if (sigVal != null && sigVal !== '' && !Number.isNaN(Number(sigVal))) {
+        const val = Number(sigVal)
+        signalMarkData.value.push({
+          xAxis: i,
+          name: val > 0 ? `BUY ${val.toFixed(2)}` : `SELL ${val.toFixed(2)}`,
+          lineStyle: { color: val > 0 ? '#ef5350' : '#26a69a', width: 1.5, type: 'dashed' as const },
+          label: { show: true, position: 'insideStartTop' as const, formatter: val > 0 ? '▲' : '▼', fontSize: 10, color: val > 0 ? '#ef5350' : '#26a69a' },
+        })
+      }
     }
   } catch { /* ignore */ }
 }
@@ -149,6 +165,11 @@ async function doRenderChart() {
           borderColor: upColor,
           borderColor0: downColor,
         },
+        markLine: signalMarkData.value.length > 0 ? {
+          silent: true,
+          symbol: 'none',
+          data: signalMarkData.value,
+        } : undefined,
       },
       {
         name: '资金曲线',

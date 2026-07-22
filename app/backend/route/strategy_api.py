@@ -255,6 +255,128 @@ async def delete_strategy(
             )
 
 
+@auth(perm=["strategy.write"])
+@json_post_checker(necessary_keys={"result_uuid": str, "name": str, "strategy_uid": str,
+                                   "strategy_version": str, "exec_start_time": int, "exec_end_time": int,
+                                   "period": int, "metrics": object})
+async def save_result(
+    request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None
+):
+    """保存回测结果"""
+    if data is None:
+        return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="data is None"))
+    try:
+        async with async_session() as s:
+            from database.model import StrategyResult as SR
+            # 将 metrics 转为 JSON 字符串
+            metrics_str = data["metrics"] if isinstance(data["metrics"], str) else json.dumps(data["metrics"])
+            result = SR(
+                uuid=data["result_uuid"],
+                name=data["name"],
+                strategy_uid=data["strategy_uid"],
+                strategy_version=data["strategy_version"],
+                strategy_params=data.get("strategy_params"),
+                factor_snapshots=data.get("factor_snapshots"),
+                exec_start_time=data["exec_start_time"],
+                exec_end_time=data["exec_end_time"],
+                period=data["period"],
+                targets=data.get("targets"),
+                runner_name=data.get("runner_name", "default"),
+                metrics=metrics_str,
+                trade_data=data.get("trade_data"),
+                chart_data=data.get("chart_data"),
+                multi_param_keys=data.get("multi_param_keys"),
+                multi_results=data.get("multi_results"),
+            )
+            s.add(result)
+            await s.commit()
+        return web.json_response(app_response(data={"uuid": data["result_uuid"]}))
+    except Exception as e:
+        return web.json_response(app_response(code=AppCode.UNKNOWN_ERROR, msg=str(e)))
+
+
+async def list_results(request: web.Request):
+    """获取策略的所有保存结果"""
+    strategy_uid = request.match_info.get("uuid", "")
+    if not strategy_uid:
+        return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="缺少 strategy_uid"))
+    try:
+        from database.model import StrategyResult as SR
+        async with async_session() as s:
+            results = await s.execute(
+                select(SR).filter_by(strategy_uid=strategy_uid).order_by(SR.create_time.desc()).limit(50)
+            )
+            rows = results.scalars().all()
+        return web.json_response(app_response(data=[{
+            "uuid": r.uuid,
+            "name": r.name,
+            "strategy_version": r.strategy_version,
+            "exec_start_time": r.exec_start_time,
+            "exec_end_time": r.exec_end_time,
+            "period": r.period,
+            "runner_name": r.runner_name,
+            "create_time": r.create_time,
+            "multi_param_keys": r.multi_param_keys,
+        } for r in rows]))
+    except Exception as e:
+        return web.json_response(app_response(code=AppCode.UNKNOWN_ERROR, msg=str(e)))
+
+
+async def get_saved_result(request: web.Request):
+    """获取单个保存结果的完整数据"""
+    result_uuid = request.match_info.get("result_uuid", "")
+    if not result_uuid:
+        return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="缺少 result_uuid"))
+    try:
+        from database.model import StrategyResult as SR
+        async with async_session() as s:
+            row = (await s.execute(select(SR).filter_by(uuid=result_uuid))).scalar()
+        if row is None:
+            return web.json_response(app_response(code=AppCode.NOT_FOUND, msg="结果不存在"))
+        return web.json_response(app_response(data={
+            "uuid": row.uuid,
+            "name": row.name,
+            "strategy_uid": row.strategy_uid,
+            "strategy_version": row.strategy_version,
+            "strategy_params": row.strategy_params,
+            "factor_snapshots": row.factor_snapshots,
+            "exec_start_time": row.exec_start_time,
+            "exec_end_time": row.exec_end_time,
+            "period": row.period,
+            "targets": row.targets,
+            "runner_name": row.runner_name,
+            "metrics": json.loads(row.metrics) if isinstance(row.metrics, str) else row.metrics,
+            "trade_data": row.trade_data,
+            "chart_data": row.chart_data,
+            "multi_param_keys": row.multi_param_keys,
+            "multi_results": row.multi_results,
+            "create_time": row.create_time,
+        }))
+    except Exception as e:
+        return web.json_response(app_response(code=AppCode.UNKNOWN_ERROR, msg=str(e)))
+
+
+@auth(perm=["strategy.write"])
+@json_post_checker(necessary_keys={"result_uuid": str})
+async def delete_result(
+    request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None
+):
+    """删除保存的回测结果"""
+    if data is None:
+        return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="data is None"))
+    try:
+        from database.model import StrategyResult as SR
+        async with async_session() as s:
+            row = (await s.execute(select(SR).filter_by(uuid=data["result_uuid"]))).scalar()
+            if row is None:
+                return web.json_response(app_response(code=AppCode.NOT_FOUND, msg="结果不存在"))
+            await s.delete(row)
+            await s.commit()
+        return web.json_response(app_response(data=True))
+    except Exception as e:
+        return web.json_response(app_response(code=AppCode.UNKNOWN_ERROR, msg=str(e)))
+
+
 rules = [
     web.RouteDef("GET", "/strategy/{uuid}", get_strategy, {}),
     web.RouteDef("GET", "/strategy/group", get_strategy_group, {}),
@@ -265,4 +387,8 @@ rules = [
     web.RouteDef("POST", "/strategy/delete", delete_strategy, {}),
     web.RouteDef("POST", "/strategy/execute", execute_strategy, {}),
     web.RouteDef("GET", "/strategy/result/{id}", strategy_result, {}),
+    web.RouteDef("POST", "/strategy/result/save", save_result, {}),
+    web.RouteDef("POST", "/strategy/result/delete", delete_result, {}),
+    web.RouteDef("GET", "/strategy/{uuid}/results", list_results, {}),
+    web.RouteDef("GET", "/strategy/result/saved/{result_uuid}", get_saved_result, {}),
 ]

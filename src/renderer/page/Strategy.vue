@@ -4,7 +4,7 @@ import { ref, computed, onBeforeMount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {Monaco} from 'vue-shiki-monaco';
 import {Strategy, Factor, ParamType, ThemeStore } from '../../store';
-import {getStrategyDetail, getStrategyGroup, updateStrategy, deleteStrategy, executeStrategy, getRunnerList} from '../../api/strategy';
+import {getStrategyDetail, getStrategyGroup, updateStrategy, deleteStrategy, executeStrategy, getRunnerList, getSavedResults, saveStrategyResult, deleteSavedResult, SavedResultItem} from '../../api/strategy';
 import {getFactorList, getFactorGroup} from '../../api/factor';
 import ParamBand from '../element/ParamBand.vue';
 import ParamEditor from '../element/ParamEditor.vue';
@@ -373,10 +373,17 @@ async function confirmRun() {
             ...Object.keys(payload.multi_params || {}),
             ...Object.keys(payload.multi_expressions || {}),
         ];
-        taskStore.addTasks(resultIds, strategy.value?.name || '', runForm.value.runner_name, allKeys);
+        // 收集因子快照信息
+        const factorSnapshots = ((strategy.value as any)?.factor_infos || []).map((fi: any) => ({
+            uuid: fi.uuid, name: fi.name, version: fi.version, params: fi.params || [],
+        }))
+        taskStore.addTasks(resultIds, strategy.value?.name || '', runForm.value.runner_name, allKeys, strategy.value?.uuid || '', strategy.value?.version || '', factorSnapshots);
 
         ElMessage.success('策略已提交运行');
         showRunDialog.value = false;
+        // 自动切换到结果 Tab 并刷新
+        show.value = 'results';
+        await loadSavedResults();
     } else {
         ElMessage.error('运行失败: ' + (resp.msg || '未知错误'));
     }
@@ -555,17 +562,11 @@ function onFactorDragEnd(event: DragEvent) {
 }
 
 async function loadStrategy() {
-    if (!props.uuid) {
-        return;
-    }
+    if (!props.uuid) { return; }
     const data = await getStrategyDetail(props.uuid);
-    if (!data) {
-        ElMessage.error('策略不存在');
-        return;
-    }
+    if (!data) { ElMessage.error('策略不存在'); return; }
     strategy.value = data;
     strategy.value.uuid = props.uuid;
-    // 从 factor_infos 填充因子显示映射
     const infos: Record<string, { name: string; version: string; description: string }> = {};
     if ((data as any).factor_infos) {
         for (const fi of (data as any).factor_infos) {
@@ -573,6 +574,45 @@ async function loadStrategy() {
         }
     }
     factorMap.value = infos;
+    // 加载历史结果
+    await loadSavedResults();
+}
+
+// ===== 保存结果 =====
+const savedResults = ref<SavedResultItem[]>([]);
+const savedResultsLoading = ref(false);
+
+async function loadSavedResults() {
+    if (!props.uuid) return;
+    savedResultsLoading.value = true;
+    try {
+        savedResults.value = await getSavedResults(props.uuid);
+    } finally {
+        savedResultsLoading.value = false;
+    }
+}
+
+function viewSavedResult(resultUuid: string) {
+    window.open(`#/strategy/result?id=${resultUuid}&saved=1`, '_blank');
+}
+
+function formatResultTime(ts: number): string {
+    return new Date(ts * 1000).toLocaleString();
+}
+
+async function handleDeleteResult(resultUuid: string) {
+    try {
+        await ElMessageBox.confirm('确定要删除这条结果吗？此操作不可恢复。', '删除结果', {
+            confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning',
+        })
+    } catch { return }
+    const resp = await deleteSavedResult(resultUuid)
+    if (resp.code === 0) {
+        ElMessage.success('已删除')
+        await loadSavedResults()
+    } else {
+        ElMessage.error('删除失败: ' + (resp.msg || ''))
+    }
 }
 
 onBeforeMount(async () => {
@@ -665,10 +705,36 @@ watch(() => props.uuid, async (newUuid) => {
                         :current-theme="monacoTheme" height="90%">
                         </Monaco>
                     </ElTabPane>
-                    <ElTabPane name="chart" style="height: 100%;">
+                    <ElTabPane name="results" style="height: 100%;">
                         <template #label>
                             <CustomIcon name="chart"></CustomIcon>
                         </template>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <span style="font-size: 13px; color: var(--text-secondary);">共 {{ savedResults.length }} 条</span>
+                            <ElButton size="small" @click="loadSavedResults" :loading="savedResultsLoading" style="margin-left: auto;">刷新</ElButton>
+                        </div>
+                        <ElScrollbar v-loading="savedResultsLoading">
+                            <ElTable v-if="savedResults.length > 0" :data="savedResults" stripe size="small" style="width: 100%;">
+                                <ElTableColumn prop="name" label="名称" min-width="140" show-overflow-tooltip />
+                                <ElTableColumn prop="strategy_version" label="策略版本" width="100" />
+                                <ElTableColumn label="回测区间" min-width="200">
+                                    <template #default="{ row }">
+                                        {{ formatResultTime(row.exec_start_time) }} ~ {{ formatResultTime(row.exec_end_time) }}
+                                    </template>
+                                </ElTableColumn>
+                                <ElTableColumn prop="runner_name" label="执行器" width="80" />
+                                <ElTableColumn label="创建时间" width="160">
+                                    <template #default="{ row }">{{ formatResultTime(row.create_time) }}</template>
+                                </ElTableColumn>
+                                <ElTableColumn label="操作" width="120" align="center" fixed="right">
+                                    <template #default="{ row }">
+                                        <ElButton size="small" type="primary" link @click="viewSavedResult(row.uuid)">查看</ElButton>
+                                        <ElButton size="small" type="danger" link @click="handleDeleteResult(row.uuid)">删除</ElButton>
+                                    </template>
+                                </ElTableColumn>
+                            </ElTable>
+                            <ElEmpty v-else description="暂无保存结果，运行策略后可保存" />
+                        </ElScrollbar>
                     </ElTabPane>
                     <ElTabPane label="编辑" name="edit" style="height: 100%;" v-if="show === 'edit'">
                         <ParamEditor
@@ -786,6 +852,7 @@ watch(() => props.uuid, async (newUuid) => {
                     </span>
                 </ElFormItem>
                 <template v-if="runForm.multiEnabled">
+                    <div style="max-height: 260px; overflow-y: auto; padding-right: 4px;">
                     <div v-for="(row, idx) in multiParamRows" :key="idx" style="margin-bottom: 8px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 6px;">
                         <ElFormItem :label="`参数 ${idx + 1}`" style="margin-bottom: 4px;">
                             <div style="display: flex; gap: 8px; align-items: center; width: 100%; flex-wrap: wrap;">
@@ -819,6 +886,7 @@ watch(() => props.uuid, async (newUuid) => {
                                 @keyup.enter="addMultiValue(row)"
                             />
                         </div>
+                    </div>
                     </div>
                     <ElFormItem>
                         <ElButton size="small" @click="addMultiParamRow">+ 添加参数</ElButton>

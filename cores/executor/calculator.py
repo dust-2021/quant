@@ -100,6 +100,11 @@ def _run_task(
         strategy_mod.__setattr__("context", ctx)
         data = strategy_func(data)
 
+        # 将多参数覆盖值合并到 strategy.params（保留前缀以区分来源）
+        for key, val in multi_params.items():
+            strategy_merged[key] = val
+        strategy_mod.__setattr__("params", strategy_merged)
+
         # backtest
         result = runner(data, ctx, getattr(strategy_mod, "params", dict()), multi_params)
     except Exception as e:

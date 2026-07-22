@@ -82,3 +82,39 @@ export async function getRunnerList() {
     }
     return resp.data as string[];
 }
+
+/** 保存策略回测结果 */
+export async function saveStrategyResult(data: {
+    result_uuid: string; name: string; strategy_uid: string;
+    strategy_version: string; strategy_params?: any; factor_snapshots?: any[];
+    exec_start_time: number; exec_end_time: number; period: number;
+    targets?: string[]; runner_name?: string;
+    metrics: Record<string, any>; trade_data?: string; chart_data?: string;
+    multi_param_keys?: string[]; multi_results?: any[];
+}) {
+    return await fetch('/api/strategy/result/save', 'POST', data);
+}
+
+/** 获取策略的所有保存结果 */
+export interface SavedResultItem {
+    uuid: string; name: string; strategy_version: string;
+    exec_start_time: number; exec_end_time: number; period: number;
+    runner_name: string; create_time: number; multi_param_keys: string[] | null;
+}
+export async function getSavedResults(strategyUuid: string): Promise<SavedResultItem[]> {
+    const resp = await fetch<SavedResultItem[]>(`/api/strategy/${strategyUuid}/results`, 'GET');
+    if (resp === null || resp.code !== 0) return [];
+    return resp.data || [];
+}
+
+/** 获取单个保存结果的完整数据 */
+export async function getSavedResultDetail(resultUuid: string): Promise<any> {
+    const resp = await fetch<any>(`/api/strategy/result/saved/${resultUuid}`, 'GET');
+    if (resp === null || resp.code !== 0) return null;
+    return resp.data;
+}
+
+/** 删除保存的回测结果 */
+export async function deleteSavedResult(resultUuid: string) {
+    return await fetch('/api/strategy/result/delete', 'POST', { result_uuid: resultUuid });
+}

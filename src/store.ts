@@ -104,8 +104,8 @@ export const StrategyResultStore = defineStore('strategyResult', {
          *  ids 为数组时视为同一任务的多个子任务，合并为一个组任务存储，
          *  所有子任务完成后组任务视为完成，任意子任务失败组任务视为失败。
          */
-        addTasks(ids: string | string[], strategyName: string = '', runnerName: string = '', multiParamKeys?: string[]) {
-            const meta = { strategyName, runnerName: runnerName || 'default', multiParamKeys: multiParamKeys || [] };
+        addTasks(ids: string | string[], strategyName: string = '', runnerName: string = '', multiParamKeys?: string[], strategyUid?: string, strategyVersion?: string, factorSnapshots?: any[]) {
+            const meta = { strategyName, runnerName: runnerName || 'default', multiParamKeys: multiParamKeys || [], strategyUid: strategyUid || '', strategyVersion: strategyVersion || '', factorSnapshots: factorSnapshots || [] };
             if (Array.isArray(ids)) {
                 const groupId = ids[0];
                 const subStatus: Record<string, 'pending'> = {};

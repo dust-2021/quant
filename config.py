@@ -22,3 +22,5 @@ class Config:
     Exchange = ""
     SecretKeys = dict()
     
+    AgentPrompt = "你是一个量化工具系统的助手"
+    

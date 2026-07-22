@@ -10,14 +10,14 @@ import os
 
 
 def generate_app() -> web.Application:
-    app = web.Application()
+    app = web.Application(client_max_size=50 * 1024 * 1024)  # 50MB
 
     # 首页路由 - 保持不变
     index_routes = [r for r in base_router if r.path == '/']
     app.add_routes(index_routes)
 
     # API 子应用 - 统一添加 /api 前缀
-    api = web.Application()
+    api = web.Application(client_max_size=50 * 1024 * 1024)  # 50MB
     api_routes = [r for r in base_router if r.path != '/']
     api.add_routes(api_routes)
     api.add_routes(strategy_router)

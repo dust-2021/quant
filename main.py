@@ -7,6 +7,7 @@ from database.model import Config as ConfDb
 from database.base import init_db
 from database.data_center import init_data_center
 from utils.logger import setup_logging
+from cores.agent.base import MyAgent
 
 async def open_browser():
     if platform.system() == "Windows":
@@ -19,11 +20,15 @@ async def main():
     await init_db()
     # 初始化数据中心
     _ = await init_data_center()
+    # 初始化日志
     setup_logging(
         level=await ConfDb.get('BaseLog'),
         aiohttp_level=await ConfDb.get('WebLog'),
         sqlalchemy_level=await ConfDb.get('SQLAlchemyLog'),
     )
+    # 初始化agent
+    _ = MyAgent()
+    
     port: int = await ConfDb.get('Port')
     app = generate_app()
     logger.info(f"start app at port:{port}")

@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import CryptoJs from 'crypto-js';
 import axios from 'axios';
 import { ElMessage } from 'element-plus';
+import { getSetting } from '../api/setting';
 
 // ws请求
 type wsPayload = {
@@ -48,7 +49,7 @@ type exchangeInfoT = {
 
 export class Binance {
     public static readonly urls: Record<reqType, Record<tradeType, string>> = {
-        stream: { spot: "wss://stream.binance.com:9443", swap: "wss://fstream.binance.com/market/stream" },
+        stream: { spot: "wss://stream.binance.com:443", swap: "wss://fstream.binance.com/market/stream" },
         ws: { spot: "wss://ws-api.binance.com:443/ws-api/v3", swap: "wss://ws-fapi.binance.com/ws-fapi/v1" },
         http: { spot: "https://api.binance.com", swap: "https://fapi.binance.com" }
     }
@@ -78,6 +79,14 @@ export class Binance {
 
     private constructor(apiKey: string = "") {
         this.apiKey = apiKey;
+    };
+
+    public async getCardConf() :Promise<{target: string, period: binanceInterval, t: tradeType}> {
+        const conf = await getSetting("binanceCardConf");
+        if (conf === null){
+            return {target: "BTCUSDT", period: '1h', t: 'swap'};
+        };
+        return conf;
     }
 
     private formatParam(record: Record<string, any>, signature: boolean = false): string {
@@ -105,14 +114,11 @@ export class Binance {
             data['timestamp'] = Date.now();
             data['recvWindow'] = 5000;
         }
-        const resp = await axios.request({
-            url: fullUrl,
-            method: method,
-            headers: {
-                'Content-Type': 'application/json',
-                'X-MBX-APIKEY': this.apiKey,
-            },
-        });
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (this.apiKey) {
+            headers['X-MBX-APIKEY'] = this.apiKey
+        }
+        const resp = await axios.request({ url: fullUrl, method: method, headers });
         if (resp.status !== 200) return null;
         return resp.data;
     }
@@ -196,7 +202,7 @@ export class Binance {
      */
     public async exchangeInfo(t: tradeType) {
         if (this.exchangeinfoData[t]) return this.exchangeinfoData[t];
-        let url = t === 'spot' ? '/api/v3/exchangeInfo' : '';
+        let url = t === 'spot' ? '/api/v3/exchangeInfo' : '/fapi/v1/exchangeInfo';
         const resp = await this.httpRequest(url, 'GET', t);
         this.exchangeinfoData[t] = resp;
         return resp as {
@@ -241,6 +247,8 @@ export class Binance {
     private async handleWs(t: tradeType, wst: 'stream' | 'ws', event: MessageEvent) {
         if (event.data === 'ping') {
             this.conns[wst][t]?.send('pong');
+            ElMessage.info('recieve ping');
+            console.log('ping');
             return;
         }
         const data: eventPaload | wsResponse = JSON.parse(event.data);
@@ -266,9 +274,10 @@ export class Binance {
         }
     }
 
-    public async subscribeKline(key: string, t: tradeType = 'spot', handle: wsEventCallback, cb?: wsCallback) {
+    public async subscribe(key: string, t: tradeType = 'spot', handle: wsEventCallback, cb?: wsCallback) {
         await this.connect(t, 'stream');
         await this.send(t, 'stream', { id: uuidv4(), method: "SUBSCRIBE", params: [key] }, (data: wsResponse) => {
+            console.log(`unsubscribe ${key} resp: ${JSON.stringify(data)}`);
             if (cb) cb(data);
             if (data.status === undefined || data.status === 200) {
                 this.wsEventHandle.set(key, handle);

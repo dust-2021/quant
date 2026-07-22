@@ -124,6 +124,30 @@ class Calculator(base):
     update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))
     description = Column(Text, nullable=True)
     content = Column(Text, nullable=False, default="", comment="计算器内容")
+    
+
+class StrategyResult(base):
+    """策略回测结果存档"""
+    __tablename__ = "strategy_result"
+
+    id = Column(Integer, primary_key=True)
+    uuid = Column(String(64), nullable=False, index=True, unique=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), nullable=False, comment="自定义名称/描述")
+    strategy_uid = Column(String(64), nullable=False, index=True)
+    strategy_version = Column(String(255), nullable=False, comment="执行时的策略版本")
+    strategy_params = Column(PickleType, comment="执行时的策略参数快照")
+    factor_snapshots = Column(PickleType, comment="执行时的因子快照 [{uuid, name, version, params}]")
+    exec_start_time = Column(Integer, nullable=False, comment="回测起始时间")
+    exec_end_time = Column(Integer, nullable=False, comment="回测结束时间")
+    period = Column(Integer, nullable=False, comment="回测周期(秒)")
+    targets = Column(PickleType, comment="回测标的列表")
+    runner_name = Column(String(255), nullable=False, default="default")
+    metrics = Column(Text, nullable=False, comment="指标JSON")
+    trade_data = Column(Text, nullable=True, comment="交易订单JSON")
+    chart_data = Column(Text, nullable=True, comment="图表数据JSON(单任务时)")
+    multi_param_keys = Column(PickleType, comment="多参数键列表")
+    multi_results = Column(PickleType, comment="多参数各子结果 [{key_values: {k:v}, metrics: {}}]")
+    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))
 
 
 # =========== 数据中心逻辑表 ===============

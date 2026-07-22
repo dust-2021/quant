@@ -3,17 +3,21 @@ import { ref, computed, onBeforeMount } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ElCard, ElTag, ElScrollbar, ElDescriptions, ElDescriptionsItem,
-  ElAlert, ElSkeleton, ElTable, ElTableColumn,
+  ElAlert, ElSkeleton, ElTable, ElTableColumn, ElMessage, ElMessageBox, ElCollapse, ElCollapseItem,
   ElTabs, ElTabPane, ElEmpty, ElSelect, ElOption, ElButton
 } from 'element-plus'
 import { fetch } from '../../api/base'
 import { taskResult } from '../../store'
+import { getSavedResultDetail, saveStrategyResult } from '../../api/strategy'
 import ResultChartOfDefault from '../element/ResultChartOfDefault.vue'
 
 interface TaskMeta {
   strategyName: string
   runnerName: string
-  multiParamKeys: string[]   // ["_strategy.leverage", "_factor.uuid.window"]
+  multiParamKeys: string[]
+  strategyUid: string
+  strategyVersion: string
+  factorSnapshots?: { uuid: string; name: string; version: string; params: any[] }[]
   subIds?: string[]
 }
 
@@ -30,8 +34,13 @@ interface SubResult {
 
 const route = useRoute()
 const taskId = (route.query.id as string) || ''
+const isSaved = route.query.saved === '1'
 
 const meta = ref<TaskMeta | null>(null)
+const savedInfo = ref<{
+  strategyVersion: string; strategyParams: Record<string, any>;
+  factorSnapshots: { uuid: string; name: string; version: string; params: any[] }[];
+} | null>(null)
 const singleResult = ref<taskResult | null>(null)
 const singleError = ref('')
 const singleTradeRows = ref<any[]>([])
@@ -146,24 +155,86 @@ function initSubResult(sr: SubResult) {
     sr.tradeRows = parseTradeData(sr.result.tradeData)
     sr.signalCol = detectSignalCol(sr.result.params)
   }
-  // 从执行参数中提取多参数值（按纯净参数名去前缀）
+  // 从执行参数中提取多参数值（使用完整前缀键）
   sr.paramDisplay = {}
   if (sr.result?.params && meta.value?.multiParamKeys) {
     for (const key of meta.value.multiParamKeys) {
-      const pureName = key.includes('.') ? key.split('.').slice(-1)[0] : key
-      const v = sr.result.params[pureName]
+      const v = sr.result.params[key]
       if (v !== undefined && v !== null) {
-        sr.paramDisplay[pureName] = String(v)
+        sr.paramDisplay[key] = String(v)
       }
     }
   }
 }
 
 async function loadResult() {
-  const raw = sessionStorage.getItem(`task_${taskId}`)
-  if (raw) {
-    meta.value = JSON.parse(raw)
+  // 已保存结果：从 API 加载
+  if (isSaved) {
+    const saved = await getSavedResultDetail(taskId)
+    if (!saved) { loading.value = false; return }
+    meta.value = {
+      strategyName: saved.name,
+      runnerName: saved.runner_name,
+      multiParamKeys: saved.multi_param_keys || [],
+      strategyUid: saved.strategy_uid || '',
+      strategyVersion: saved.strategy_version || '',
+    }
+    savedInfo.value = {
+      strategyVersion: saved.strategy_version || '',
+      strategyParams: saved.strategy_params || {},
+      factorSnapshots: saved.factor_snapshots || [],
+    }
+    // 重建单结果数据
+    singleResult.value = {
+      startTime: saved.exec_start_time * 1000,
+      endTime: saved.exec_end_time * 1000,
+      target: saved.targets || [],
+      period: saved.period,
+      params: saved.strategy_params || {},
+      liquidation: null,
+      data: saved.chart_data,
+      premium: 0,
+      netValue: saved.metrics?.netValue ?? 0,
+      annualizedRateOfReturn: saved.metrics?.annualizedRateOfReturn ?? 0,
+      monthlyRateOfReturn: saved.metrics?.monthlyRateOfReturn ?? 0,
+      maximumDrawdown: saved.metrics?.maximumDrawdown ?? 0,
+      tradeCount: saved.metrics?.tradeCount ?? 0,
+      winRate: saved.metrics?.winRate ?? null,
+      maximumProfit: saved.metrics?.maximumProfit ?? 0,
+      maximumLoss: saved.metrics?.maximumLoss ?? 0,
+      averageProfitLossRatio: saved.metrics?.averageProfitLossRatio ?? 0,
+      tradeData: saved.trade_data,
+    }
+    initSingleResult(singleResult.value)
+    // 多参数子结果
+    if (saved.multi_results && saved.multi_results.length > 0) {
+      subResults.value = saved.multi_results.map((mr: any, i: number) => {
+        const m = mr.metrics || {}
+        const r: taskResult = {
+          startTime: saved.exec_start_time * 1000, endTime: saved.exec_end_time * 1000,
+          target: saved.targets || [], period: saved.period,
+          params: { ...(saved.strategy_params || {}), ...(mr.key_values || {}) },
+          liquidation: null, data: null,
+          premium: 0,
+          netValue: m.netValue ?? 0, annualizedRateOfReturn: m.annualizedRateOfReturn ?? 0,
+          monthlyRateOfReturn: m.monthlyRateOfReturn ?? 0, maximumDrawdown: m.maximumDrawdown ?? 0,
+          tradeCount: m.tradeCount ?? 0, winRate: m.winRate ?? null,
+          maximumProfit: m.maximumProfit ?? 0, maximumLoss: m.maximumLoss ?? 0,
+          averageProfitLossRatio: m.averageProfitLossRatio ?? 0,
+          tradeData: mr.trade_data || null,
+        }
+        const sr: SubResult = { id: `saved_${i}`, paramDisplay: {}, status: 'success', result: r }
+        initSubResult(sr)
+        return sr
+      })
+    }
+    loading.value = false
+    return
   }
+
+  // 实时任务结果
+  const raw = sessionStorage.getItem(`task_${taskId}`)
+  if (raw) { meta.value = JSON.parse(raw) }
 
   if (meta.value?.subIds && meta.value.subIds.length > 1) {
     subResults.value = meta.value.subIds.map((subId) => ({
@@ -181,14 +252,13 @@ async function loadResult() {
           sr.tradeRows = parseTradeData(result.tradeData)
           sr.signalCol = detectSignalCol(result.params)
         }
-        // 提取多参数值
+        // 提取多参数值（使用完整前缀键）
         sr.paramDisplay = {}
         if (result.params && meta.value?.multiParamKeys) {
           for (const key of meta.value.multiParamKeys) {
-            const pureName = key.includes('.') ? key.split('.').slice(-1)[0] : key
-            const v = result.params[pureName]
+            const v = result.params[key]
             if (v !== undefined && v !== null) {
-              sr.paramDisplay[pureName] = String(v)
+              sr.paramDisplay[key] = String(v)
             }
           }
         }
@@ -207,6 +277,58 @@ async function loadResult() {
     }
   }
   loading.value = false
+  // 填充运行时版本快照
+  if (!isSaved && meta.value) {
+    savedInfo.value = {
+      strategyVersion: meta.value.strategyVersion || '',
+      strategyParams: firstSuccessResult.value?.params || singleResult.value?.params || {},
+      factorSnapshots: meta.value.factorSnapshots || [],
+    }
+  }
+}
+
+async function handleSaveResult() {
+  try {
+    const { value: name } = await ElMessageBox.prompt('请输入保存名称', '保存回测结果', {
+      confirmButtonText: '保存', cancelButtonText: '取消',
+      inputValue: meta.value?.strategyName || '',
+    })
+    if (!name || !singleResult.value) return
+    const payload: any = {
+      result_uuid: taskId, name,
+      strategy_uid: meta.value?.strategyUid || '',
+      strategy_version: meta.value?.strategyVersion || '',
+      exec_start_time: singleResult.value.startTime, exec_end_time: singleResult.value.endTime,
+      period: singleResult.value.period, targets: singleResult.value.target,
+      runner_name: meta.value?.runnerName || 'default',
+      metrics: {},
+      strategy_params: firstSuccessResult.value?.params || singleResult.value.params,
+      factor_snapshots: meta.value?.factorSnapshots || savedInfo.value?.factorSnapshots || null,
+      trade_data: singleResult.value.tradeData,
+      chart_data: singleResult.value.data,
+      multi_param_keys: meta.value?.multiParamKeys || [],
+    }
+    // 提取指标
+    for (const key of Object.keys(metricLabels)) {
+      payload.metrics[key] = singleResult.value[key as keyof taskResult]
+    }
+    // 多参数子结果
+    if (subResults.value.length > 0) {
+      payload.multi_results = subResults.value.map(sr => ({
+        key_values: sr.paramDisplay,
+        metrics: sr.result ? Object.fromEntries(
+          Object.keys(metricLabels).map(k => [k, sr.result![k as keyof taskResult]])
+        ) : {},
+        trade_data: sr.result?.tradeData || null,
+      }))
+    }
+    const resp = await saveStrategyResult(payload)
+    if (resp.code === 0) {
+      ElMessage.success('结果已保存')
+    } else {
+      ElMessage.error('保存失败: ' + (resp.msg || ''))
+    }
+  } catch { /* 取消 */ }
 }
 
 onBeforeMount(() => {
@@ -222,6 +344,7 @@ onBeforeMount(() => {
       <ElTag v-if="meta?.multiParamKeys?.length" type="info" size="small" effect="plain">
         并行: {{ meta.multiParamKeys.length }} 参数
       </ElTag>
+      <ElButton v-if="!isSaved && singleResult" size="small" type="success" style="margin-left: auto;" @click="handleSaveResult">保存结果</ElButton>
     </div>
 
     <div class="result-body">
@@ -235,6 +358,35 @@ onBeforeMount(() => {
           <div>回测区间：{{ formatTime(firstSuccessResult.startTime) }} ~ {{ formatTime(firstSuccessResult.endTime) }} · 周期：{{ formatPeriod(firstSuccessResult.period) }}</div>
           <div>标的：{{ formatTarget(firstSuccessResult.target) }}</div>
         </div>
+        <!-- 版本与参数快照（已保存结果） -->
+        <ElCollapse v-if="savedInfo" style="margin-bottom: 12px;">
+          <ElCollapseItem title="版本 & 参数快照" name="snapshot">
+            <div v-if="savedInfo.strategyVersion" style="margin-bottom: 8px;">
+              <span style="font-weight: 600; font-size: 13px;">策略版本：</span>
+              <ElTag size="small" type="primary">{{ savedInfo.strategyVersion }}</ElTag>
+            </div>
+            <template v-if="Object.keys(savedInfo.strategyParams).length">
+              <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">策略参数：</div>
+              <ElDescriptions :column="3" border size="small" style="margin-bottom: 8px;">
+                <ElDescriptionsItem v-for="(v, k) in savedInfo.strategyParams" :key="k" :label="String(k)">
+                  {{ typeof v === 'boolean' ? String(v) : v }}
+                </ElDescriptionsItem>
+              </ElDescriptions>
+            </template>
+            <template v-if="savedInfo.factorSnapshots.length">
+              <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">因子快照：</div>
+              <div v-for="fs in savedInfo.factorSnapshots" :key="fs.uuid" style="margin-bottom: 8px;">
+                <span style="font-size: 13px;">{{ fs.name }}</span>
+                <ElTag size="small" type="info" effect="plain" style="margin-left: 6px;">v{{ fs.version }}</ElTag>
+                <ElDescriptions v-if="fs.params && fs.params.length" :column="3" border size="small" style="margin-top: 4px;">
+                  <ElDescriptionsItem v-for="p in fs.params" :key="p.name" :label="p.name">
+                    {{ typeof p.v === 'boolean' ? String(p.v) : p.v }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </div>
+            </template>
+          </ElCollapseItem>
+        </ElCollapse>
         <!-- 执行参数（取第一个成功结果） -->
         <template v-if="firstSuccessResult">
           <h4 style="margin: 0 0 8px;">执行参数</h4>
@@ -248,11 +400,11 @@ onBeforeMount(() => {
         <h4 style="margin: 0 0 8px;">指标对比</h4>
         <ElTable :data="subResults" stripe size="small" max-height="400" style="width: 100%; margin-bottom: 16px;">
           <ElTableColumn v-for="key in meta?.multiParamKeys || []" :key="key"
-            :label="key.includes('.') ? key.split('.').slice(-1)[0] : key"
+            :label="key.startsWith('_factor.') ? key.replace('_factor.', '').replace('.', ':') : key.replace('_strategy.', '')"
             :min-width="100" fixed="left" :prop="key" sortable
           >
             <template #default="{ row }">
-              <span :style="{ fontWeight: 500 }">{{ row.paramDisplay?.[key.includes('.') ? key.split('.').slice(-1)[0] : key] ?? '-' }}</span>
+              <span :style="{ fontWeight: 500 }">{{ row.paramDisplay?.[key] ?? '-' }}</span>
               <ElTag v-if="row.status === 'failed'" type="danger" size="small" effect="plain" style="margin-left: 4px;">失败</ElTag>
             </template>
           </ElTableColumn>
@@ -332,6 +484,35 @@ onBeforeMount(() => {
               <span v-else style="color: var(--el-color-success);">未爆仓</span>
             </div>
           </div>
+          <!-- 版本与参数快照（已保存结果） -->
+          <ElCollapse v-if="savedInfo" style="margin-bottom: 12px;">
+            <ElCollapseItem title="版本 & 参数快照" name="snapshot">
+              <div v-if="savedInfo.strategyVersion" style="margin-bottom: 8px;">
+                <span style="font-weight: 600; font-size: 13px;">策略版本：</span>
+                <ElTag size="small" type="primary">{{ savedInfo.strategyVersion }}</ElTag>
+              </div>
+              <template v-if="Object.keys(savedInfo.strategyParams).length">
+                <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">策略参数：</div>
+                <ElDescriptions :column="3" border size="small" style="margin-bottom: 8px;">
+                  <ElDescriptionsItem v-for="(v, k) in savedInfo.strategyParams" :key="k" :label="String(k)">
+                    {{ typeof v === 'boolean' ? String(v) : v }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </template>
+              <template v-if="savedInfo.factorSnapshots.length">
+                <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">因子快照：</div>
+                <div v-for="fs in savedInfo.factorSnapshots" :key="fs.uuid" style="margin-bottom: 8px;">
+                  <span style="font-size: 13px;">{{ fs.name }}</span>
+                  <ElTag size="small" type="info" effect="plain" style="margin-left: 6px;">v{{ fs.version }}</ElTag>
+                  <ElDescriptions v-if="fs.params && fs.params.length" :column="3" border size="small" style="margin-top: 4px;">
+                    <ElDescriptionsItem v-for="p in fs.params" :key="p.name" :label="p.name">
+                      {{ typeof p.v === 'boolean' ? String(p.v) : p.v }}
+                    </ElDescriptionsItem>
+                  </ElDescriptions>
+                </div>
+              </template>
+            </ElCollapseItem>
+          </ElCollapse>
           <ElDescriptions :column="4" border size="small" style="margin-bottom: 16px;">
             <ElDescriptionsItem v-for="(label, key) in metricLabels" :key="key" :label="label">
               {{ formatMetric(singleResult[key as keyof taskResult]) }}
@@ -344,6 +525,7 @@ onBeforeMount(() => {
               <ResultChartOfDefault
                 v-if="singleResult.data && meta?.runnerName === 'default'"
                 :data-json="singleResult.data"
+                :signal-col="singleSignalCol"
               />
               <ElEmpty v-else description="仅 default 执行器支持图表" />
             </ElTabPane>
