@@ -83,7 +83,7 @@ def get_session() -> async_sessionmaker[AsyncSession]:
 
 
 async def load_data(
-    s: int, e: int, target: t.Sequence[str], p: DataPeriod = DataPeriod.HOUR
+    s: int, e: int, target: t.Sequence[str], p: DataPeriod = DataPeriod.HOUR, exchange: t.Optional[str] = None
 ) -> pd.DataFrame:
     """从数据中心加载数据，检查每个数据表是否存在，存在则查询并拼接为 DataFrame。
 
@@ -104,13 +104,15 @@ async def load_data(
     target_s: t.Set[str] = set(target)
     if _engine is None:
         raise ValueError("数据中心未链接")
+    if exchange is None:
+        exchange = await ConfigModel.get("Exchange")
     async with async_session() as session:
         resp = (
             await session.execute(
                 select(Target).filter(
                     and_(
                         Target.code.in_(target_s),
-                        Target.exchange == await ConfigModel.get("Exchange"),
+                        Target.exchange == exchange,
                     )
                 )
             )
@@ -118,7 +120,7 @@ async def load_data(
             else await session.execute(
                 # 全量选取
                 select(Target).filter(
-                    Target.exchange == await ConfigModel.get("Exchange")
+                    Target.exchange == exchange
                 )
             )
         )

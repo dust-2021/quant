@@ -4,11 +4,12 @@ import { ref, computed, onBeforeMount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {Monaco} from 'vue-shiki-monaco';
 import {Strategy, Factor, ParamType, ThemeStore } from '../../store';
-import {getStrategyDetail, getStrategyGroup, updateStrategy, deleteStrategy, executeStrategy, getRunnerList, getSavedResults, saveStrategyResult, deleteSavedResult, SavedResultItem} from '../../api/strategy';
+import {getStrategyDetail, getStrategyGroup, updateStrategy, deleteStrategy, executeStrategy, getSavedResults, saveStrategyResult, deleteSavedResult, SavedResultItem} from '../../api/strategy';
 import {getFactorList, getFactorGroup} from '../../api/factor';
 import ParamBand from '../element/ParamBand.vue';
 import ParamEditor from '../element/ParamEditor.vue';
 import CustomIcon from '../element/CustomIcon.vue';
+import StrategyRunDialog from '../element/StrategyRunDialog.vue';
 import { StrategyResultStore } from '../../store';
 
 const router = useRouter();
@@ -106,13 +107,14 @@ async function save() {
 async function saveAsNewVersion() {
     if (!strategy.value) return;
     try {
-        const { value: newVersion } = await ElMessageBox.prompt('请输入新版本号', '保存为新版本', {
+        const result = await ElMessageBox.prompt('请输入新版本号', '保存为新版本', {
             confirmButtonText: '确定',
             cancelButtonText: '取消',
             inputValue: strategy.value.version,
             inputPattern: /.*/,
             inputErrorMessage: '版本号格式不正确',
-        });
+        }) as any;
+        const newVersion = result.value as string;
         if (!newVersion) return;
         // 同步编辑器内容
         if (monacoRef.value) {
@@ -155,237 +157,35 @@ async function handleDelete() {
     }
 }
 
-async function run() {
-    if (!strategy.value?.uuid) {
-        ElMessage.warning('请先保存策略后再运行');
-        return;
-    }
-    // 同步编辑器内容
-    if (monacoRef.value) {
-        strategy.value.content = monacoRef.value.getValue();
-    }
-    showRunDialog.value = true;
-    runForm.value.start_time = '';
-    runForm.value.end_time = '';
-    runForm.value.targets = [];
-    runForm.value.period = 3600;
-    runForm.value.runner_name = 'default';
-    runForm.value.multiEnabled = false;
-    runForm.value.targetInput = '';
-    multiParamRows.value = [];
-    // 加载执行器列表
-    runnerList.value = await getRunnerList();
-}
-
 // ========= 运行设置弹窗 =========
-const showRunDialog = ref(false);
-const runnerList = ref<string[]>([]);
+const showRunDialog = ref(false)
 
-interface RunForm {
-    start_time: string;
-    end_time: string;
-    targets: string[];
-    period: number;
-    runner_name: string;
-    multiEnabled: boolean;
-    targetInput: string;
+function openRunDialog() {
+    if (!strategy.value?.uuid) { ElMessage.warning('请先保存策略后再运行'); return }
+    if (monacoRef.value) { strategy.value.content = monacoRef.value.getValue() }
+    showRunDialog.value = true
 }
 
-interface MultiParamRow {
-    paramKey: string;     // 带前缀: "_strategy.{param}" 或 "_factor.{uuid}.{param}"
-    valueInput: string;
-    values: (string | number | boolean)[];
-    expression: string;   // Python 列表推导式，非空时优先于 values
-    useExpression: boolean;
-}
+async function handleRun(payload: Record<string, any>) {
+    const allKeys: string[] = payload.allKeys || []
+    delete payload.allKeys
+    payload.uuid = strategy.value!.uuid
 
-const runForm = ref<RunForm>({
-    start_time: '',
-    end_time: '',
-    targets: [],
-    period: 3600,
-    runner_name: 'default',
-    multiEnabled: false,
-    targetInput: '',
-});
-
-const multiParamRows = ref<MultiParamRow[]>([]);
-
-const periodOptions = [
-    { label: '秒', value: 1 },
-    { label: '分钟', value: 60 },
-    { label: '小时', value: 3600 },
-    { label: '日', value: 86400 },
-];
-
-function addTarget() {
-    const val = runForm.value.targetInput.trim();
-    if (!val) return;
-    if (!runForm.value.targets.includes(val)) {
-        runForm.value.targets.push(val);
-    }
-    runForm.value.targetInput = '';
-}
-
-function removeTarget(idx: number) {
-    runForm.value.targets.splice(idx, 1);
-}
-
-// ===== 多参数并行 =====
-// 收集所有可选参数（带前缀键，避免重名）
-interface ParamOption { key: string; label: string }
-const allParamOptions = computed(() => {
-  const options: ParamOption[] = []
-  if (strategy.value?.params) {
-    for (const p of strategy.value.params) {
-      options.push({ key: `_strategy.${p.name}`, label: `${p.name} (策略)` })
-    }
-  }
-  if ((strategy.value as any)?.factor_infos) {
-    for (const fi of (strategy.value as any).factor_infos) {
-      if (fi.params) {
-        for (const p of fi.params) {
-          options.push({ key: `_factor.${fi.uuid}.${p.name}`, label: `${p.name} (因子:${fi.name})` })
-        }
-      }
-    }
-  }
-  return options
-})
-
-// 笛卡尔积数量（表达式不计入客户端计算，由服务端校验）
-const cartesianCount = computed(() => {
-  let count = 1
-  let hasExpr = false
-  for (const row of multiParamRows.value) {
-    if (row.useExpression && row.expression.trim()) { hasExpr = true; continue }
-    if (row.values.length > 0) count *= row.values.length
-  }
-  return { count, hasExpr }
-})
-const cartesianExceeded = computed(() => cartesianCount.value.count > 1000)
-
-function addMultiParamRow() {
-  multiParamRows.value.push({ paramKey: '', valueInput: '', values: [], expression: '', useExpression: false })
-}
-
-function removeMultiParamRow(idx: number) {
-  multiParamRows.value.splice(idx, 1)
-}
-
-function addMultiValue(row: MultiParamRow) {
-  const raw = row.valueInput.trim()
-  if (!raw || !row.paramKey) return
-  // 查找参数类型（去掉前缀后匹配）
-  const parts = row.paramKey.split('.')
-  const pureName = parts.length >= 2 ? parts.slice(-1)[0] : row.paramKey
-  let pType: ParamType | undefined
-  for (const p of strategy.value?.params || []) {
-    if (p.name === pureName) { pType = p.type; break }
-  }
-  if (!pType && (strategy.value as any)?.factor_infos) {
-    for (const fi of (strategy.value as any).factor_infos) {
-      for (const p of (fi.params || [])) {
-        if (p.name === pureName) { pType = p.type; break }
-      }
-    }
-  }
-  const val = convertMultiValue(raw, pType)
-  if (!row.values.includes(val)) {
-    row.values.push(val)
-  }
-  row.valueInput = ''
-}
-
-function convertMultiValue(raw: string, type?: ParamType): string | number | boolean {
-  if (!type) return raw
-  switch (type) {
-    case ParamType.Number: return Number(raw)
-    case ParamType.Boolean: return raw.toLowerCase() === 'true' || raw === '1'
-    default: return raw
-  }
-}
-
-function removeMultiValue(row: MultiParamRow, vIdx: number) {
-  row.values.splice(vIdx, 1)
-}
-
-async function confirmRun() {
-    if (!runForm.value.start_time || !runForm.value.end_time) {
-        ElMessage.warning('请选择起止时间');
-        return;
-    }
-    const startTime = Math.floor(new Date(runForm.value.start_time).getTime());
-    const endTime = Math.floor(new Date(runForm.value.end_time).getTime());
-    if (startTime >= endTime) {
-        ElMessage.warning('起始时间必须早于结束时间');
-        return;
-    }
-    if (!strategy.value) return;
-
-    // 校验多参数
-    if (runForm.value.multiEnabled && cartesianExceeded.value) {
-        ElMessage.error(`参数组合数 ${cartesianCount.value.count} 超过上限 1000，请减少参数或取值`);
-        return;
-    }
-
-    const payload: {
-        uuid: string;
-        start_time: number;
-        end_time: number;
-        target?: string[];
-        period?: number;
-        runner_name?: string;
-        multi_params?: Record<string, (string | number | boolean)[]>;
-        multi_expressions?: Record<string, string>;
-    } = {
-        uuid: strategy.value.uuid,
-        start_time: startTime,
-        end_time: endTime,
-        period: runForm.value.period,
-        runner_name: runForm.value.runner_name,
-    };
-    if (runForm.value.targets.length > 0) {
-        payload.target = runForm.value.targets;
-    }
-    if (runForm.value.multiEnabled && multiParamRows.value.length > 0) {
-        const mp: Record<string, (string | number | boolean)[]> = {};
-        const me: Record<string, string> = {};
-        for (const row of multiParamRows.value) {
-            if (!row.paramKey) continue;
-            if (row.useExpression && row.expression.trim()) {
-                me[row.paramKey] = row.expression.trim();
-            } else if (row.values.length > 0) {
-                mp[row.paramKey] = [...row.values];
-            }
-        }
-        if (Object.keys(mp).length > 0) payload.multi_params = mp;
-        if (Object.keys(me).length > 0) payload.multi_expressions = me;
-    }
-
-    const resp = await executeStrategy(payload);
+    const resp = await executeStrategy(payload as any)
     if (resp.code === 0) {
-        const taskStore = StrategyResultStore();
-        const resultIds = resp.data;
-        if (!resultIds) return;
-        // 收集所有多参数键名（含表达式键）
-        const allKeys = [
-            ...Object.keys(payload.multi_params || {}),
-            ...Object.keys(payload.multi_expressions || {}),
-        ];
-        // 收集因子快照信息
+        const taskStore = StrategyResultStore()
+        const resultIds = resp.data
+        if (!resultIds) return
         const factorSnapshots = ((strategy.value as any)?.factor_infos || []).map((fi: any) => ({
             uuid: fi.uuid, name: fi.name, version: fi.version, params: fi.params || [],
         }))
-        taskStore.addTasks(resultIds, strategy.value?.name || '', runForm.value.runner_name, allKeys, strategy.value?.uuid || '', strategy.value?.version || '', factorSnapshots);
-
-        ElMessage.success('策略已提交运行');
-        showRunDialog.value = false;
-        // 自动切换到结果 Tab 并刷新
-        show.value = 'results';
-        await loadSavedResults();
+        taskStore.addTasks(resultIds, strategy.value?.name || '', payload.runner_name || 'default', allKeys, strategy.value?.uuid || '', strategy.value?.version || '', factorSnapshots)
+        ElMessage.success('策略已提交运行')
+        showRunDialog.value = false
+        show.value = 'results'
+        await loadSavedResults()
     } else {
-        ElMessage.error('运行失败: ' + (resp.msg || '未知错误'));
+        ElMessage.error('运行失败: ' + (resp.msg || '未知错误'))
     }
 }
 
@@ -576,11 +376,13 @@ async function loadStrategy() {
     factorMap.value = infos;
     // 加载历史结果
     await loadSavedResults();
+    strategyLoaded.value = true;
 }
 
 // ===== 保存结果 =====
 const savedResults = ref<SavedResultItem[]>([]);
 const savedResultsLoading = ref(false);
+const strategyLoaded = ref(false);
 
 async function loadSavedResults() {
     if (!props.uuid) return;
@@ -623,7 +425,9 @@ onBeforeMount(async () => {
 // 版本切换时（同一组件复用）重新加载策略数据
 watch(() => props.uuid, async (newUuid) => {
     if (newUuid) {
+        strategyLoaded.value = false;
         await loadStrategy();
+        strategyLoaded.value = true;
     }
 });
 
@@ -666,7 +470,7 @@ watch(() => props.uuid, async (newUuid) => {
                     <div style="height: 60px; padding-top: 5px;box-sizing: border-box;">
                         <ElButton type="primary" @click="save" plain>保存</ElButton>
                         <ElButton v-if="strategy.uuid" type="success" @click="saveAsNewVersion" plain>保存为新版本</ElButton>
-                        <ElButton type="primary" @click="run" plain>运行</ElButton>
+                        <ElButton type="primary" @click="openRunDialog" plain>运行</ElButton>
                     </div>
                 </div>   
             </ElCol> 
@@ -700,7 +504,7 @@ watch(() => props.uuid, async (newUuid) => {
                         <template #label>
                             <CustomIcon name="code"></CustomIcon>
                         </template>
-                        <Monaco ref="monacoRef" current-language="python" :value="strategy.content" :file-name="`${strategy.name}.py`" 
+                        <Monaco v-if="strategyLoaded" ref="monacoRef" current-language="python" :value="strategy.content" :file-name="`${strategy.name}.py`" 
                         style="height: calc(100% - 10px);border: 0;box-shadow: none;border-radius: 0;background-color: var(--bg-card);"
                         :current-theme="monacoTheme" height="90%">
                         </Monaco>
@@ -792,112 +596,14 @@ watch(() => props.uuid, async (newUuid) => {
         </ElDialog>
 
         <!-- 运行设置弹窗 -->
-        <ElDialog v-model="showRunDialog" title="运行设置" width="560px" :close-on-click-modal="false">
-            <ElForm label-width="80px">
-                <ElFormItem label="起始时间" required>
-                    <ElDatePicker
-                        v-model="runForm.start_time"
-                        type="datetime"
-                        placeholder="选择起始时间"
-                        format="YYYY-MM-DD HH:mm:ss"
-                        value-format="YYYY-MM-DD HH:mm:ss"
-                        style="width: 100%;"
-                    />
-                </ElFormItem>
-                <ElFormItem label="结束时间" required>
-                    <ElDatePicker
-                        v-model="runForm.end_time"
-                        type="datetime"
-                        placeholder="选择结束时间"
-                        format="YYYY-MM-DD HH:mm:ss"
-                        value-format="YYYY-MM-DD HH:mm:ss"
-                        style="width: 100%;"
-                    />
-                </ElFormItem>
-                <ElFormItem label="标的代码">
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                        <ElTag
-                            v-for="(t, idx) in runForm.targets"
-                            :key="t"
-                            closable
-                            size="small"
-                            type="info"
-                            @close="removeTarget(idx)"
-                        >{{ t }}</ElTag>
-                        <ElInput
-                            v-model="runForm.targetInput"
-                            placeholder="输入后回车添加"
-                            size="small"
-                            style="width: 160px;"
-                            @keyup.enter="addTarget"
-                        />
-                    </div>
-                </ElFormItem>
-                <ElFormItem label="周期">
-                    <ElSelect v-model="runForm.period" style="width: 100%;">
-                        <ElOption v-for="p in periodOptions" :key="p.value" :label="p.label" :value="p.value"/>
-                    </ElSelect>
-                </ElFormItem>
-                <ElFormItem label="执行器">
-                    <ElSelect v-model="runForm.runner_name" style="width: 100%;">
-                        <ElOption v-for="r in runnerList" :key="r" :label="r" :value="r"/>
-                    </ElSelect>
-                </ElFormItem>
-                <ElFormItem label="并行回测">
-                    <ElCheckbox v-model="runForm.multiEnabled">启用多参数并行回测</ElCheckbox>
-                    <span v-if="runForm.multiEnabled && multiParamRows.length > 0" style="margin-left: 8px; font-size: 12px;">
-                        组合数: <b :style="{ color: cartesianExceeded ? '#f56c6c' : '#67c23a' }">{{ cartesianCount.count }}</b>
-                        <span v-if="cartesianCount.hasExpr" style="color: #e6a23c;"> (含表达式)</span>
-                        <span v-if="cartesianExceeded" style="color: #f56c6c;"> (超过上限 1000)</span>
-                    </span>
-                </ElFormItem>
-                <template v-if="runForm.multiEnabled">
-                    <div style="max-height: 260px; overflow-y: auto; padding-right: 4px;">
-                    <div v-for="(row, idx) in multiParamRows" :key="idx" style="margin-bottom: 8px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 6px;">
-                        <ElFormItem :label="`参数 ${idx + 1}`" style="margin-bottom: 4px;">
-                            <div style="display: flex; gap: 8px; align-items: center; width: 100%; flex-wrap: wrap;">
-                                <ElSelect v-model="row.paramKey" placeholder="选择参数" style="width: 220px;" filterable>
-                                    <ElOption v-for="opt in allParamOptions" :key="opt.key" :label="opt.label" :value="opt.key"/>
-                                </ElSelect>
-                                <ElButton size="small" :type="row.useExpression ? 'warning' : ''" @click="row.useExpression = !row.useExpression">
-                                    {{ row.useExpression ? '手动输入' : '表达式' }}
-                                </ElButton>
-                                <ElButton type="danger" size="small" circle @click="removeMultiParamRow(idx)">✕</ElButton>
-                            </div>
-                        </ElFormItem>
-                        <!-- 表达式模式 -->
-                        <div v-if="row.useExpression && row.paramKey" style="margin-left: 80px;">
-                            <ElInput v-model="row.expression" placeholder="输入 Python 列表推导式，如: [i/10 for i in range(1,21)]" size="small" style="width: 100%; max-width: 500px;" />
-                            <div style="font-size: 11px; color: #909399; margin-top: 2px;">支持 range, len, int, float, abs, min, max, round, sum</div>
-                        </div>
-                        <!-- 手动输入模式 -->
-                        <div v-if="!row.useExpression && row.paramKey" style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-left: 80px;">
-                            <ElTag
-                                v-for="(v, vIdx) in row.values"
-                                :key="vIdx"
-                                closable size="small" type="warning"
-                                @close="removeMultiValue(row, vIdx)"
-                            >{{ v }}</ElTag>
-                            <ElInput
-                                v-model="row.valueInput"
-                                placeholder="输入后回车添加"
-                                size="small"
-                                style="width: 140px;"
-                                @keyup.enter="addMultiValue(row)"
-                            />
-                        </div>
-                    </div>
-                    </div>
-                    <ElFormItem>
-                        <ElButton size="small" @click="addMultiParamRow">+ 添加参数</ElButton>
-                    </ElFormItem>
-                </template>
-            </ElForm>
-            <template #footer>
-                <ElButton @click="showRunDialog = false">取消</ElButton>
-                <ElButton type="primary" @click="confirmRun">运行</ElButton>
-            </template>
-        </ElDialog>
+        <StrategyRunDialog
+            :show="showRunDialog"
+            @update:show="showRunDialog = $event"
+            :strategy-name="strategy.name"
+            :strategy-params="strategy.params"
+            :factor-infos="(strategy as any).factor_infos || []"
+            @run="handleRun"
+        />
     </div>
 </template>
 

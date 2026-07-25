@@ -193,7 +193,7 @@ async function loadResult() {
       params: saved.strategy_params || {},
       liquidation: null,
       data: saved.chart_data,
-      premium: 0,
+      premium: saved.metrics?.premium ?? 0,
       netValue: saved.metrics?.netValue ?? 0,
       annualizedRateOfReturn: saved.metrics?.annualizedRateOfReturn ?? 0,
       monthlyRateOfReturn: saved.metrics?.monthlyRateOfReturn ?? 0,
@@ -215,7 +215,7 @@ async function loadResult() {
           target: saved.targets || [], period: saved.period,
           params: { ...(saved.strategy_params || {}), ...(mr.key_values || {}) },
           liquidation: null, data: null,
-          premium: 0,
+          premium: m.premium ?? 0,
           netValue: m.netValue ?? 0, annualizedRateOfReturn: m.annualizedRateOfReturn ?? 0,
           monthlyRateOfReturn: m.monthlyRateOfReturn ?? 0, maximumDrawdown: m.maximumDrawdown ?? 0,
           tradeCount: m.tradeCount ?? 0, winRate: m.winRate ?? null,
@@ -292,10 +292,11 @@ async function handleSaveResult() {
     const isMulti = subResults.value.length > 0
     const baseResult = isMulti ? firstSuccessResult.value : singleResult.value
     if (!baseResult) return
-    const { value: name } = await ElMessageBox.prompt('请输入保存名称', '保存回测结果', {
+    const result = await ElMessageBox.prompt('请输入保存名称', '保存回测结果', {
       confirmButtonText: '保存', cancelButtonText: '取消',
       inputValue: meta.value?.strategyName || '',
-    })
+    }) as any;
+    const name = result.value as string;
     if (!name) return
     const payload: any = {
       result_uuid: taskId, name,

@@ -6,6 +6,7 @@ from database.model import Exchange, Script, Target
 from utils.types import app_response, AppCode
 from utils.middleware.type_checker import json_post_checker
 import typing as t
+import traceback
 
 
 async def get_exchanges(req: web.Request) -> web.Response:
@@ -136,9 +137,9 @@ async def execute_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] 
             data["name"], **(data.get("params") or {})
         )
         return web.json_response(app_response(data=result))
-    except Exception as e:
+    except Exception:
         return web.json_response(
-            app_response(code=AppCode.EXECUTE_FAILED, msg=str(e))
+            app_response(code=AppCode.EXECUTE_FAILED, msg=traceback.format_exc())
         )
 
 

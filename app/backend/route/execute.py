@@ -48,6 +48,7 @@ async def execute_strategy(
             multi_params=multi_params if multi_params else None,
             multi_expressions=multi_expressions if multi_expressions else None,
             runner_name=data.get("runner_name", "default"),
+            exchange=data.get('exchange', None)
         )
     except Exception as e:
         return web.json_response(app_response(code=AppCode.UNKNOWN_ERROR, msg=e.__str__()))

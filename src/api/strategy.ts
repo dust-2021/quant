@@ -69,6 +69,7 @@ export async function executeStrategy(params: {
     runner_name?: string;
     multi_params?: Record<string, (string | number | boolean)[]>;
     multi_expressions?: Record<string, string>;
+    exchange?: string;
 }) {
     console.log('executeStrategy params:', params);
     return await fetch<string | string[]>('/api/strategy/execute', 'POST', params);

@@ -13,6 +13,8 @@ from database.base import DataPeriod
 from database.data_center import load_data
 from utils.cache import TaskCache
 
+from utils.scheduler import aSche
+
 # 多参数键前缀
 PREFIX_STRATEGY = "_strategy."
 PREFIX_FACTOR = "_factor."
@@ -148,6 +150,7 @@ class Calculator:
         multi_params: t.Optional[t.Dict[str, t.List[t.Any]]] = None,
         multi_expressions: t.Optional[t.Dict[str, str]] = None,
         runner_name: str = "default",
+        exchange: t.Optional[str] = None
     ):
         """
         无等待任务。
@@ -182,7 +185,7 @@ class Calculator:
             asyncio.create_task(
                 Calculator.execute(
                     ids, strategy_uuid, start_time, end_time, target, period,
-                    runner_name=runner_name, multi_params=combos[0] if combos else {},
+                    runner_name=runner_name, multi_params=combos[0] if combos else {}, exchange=exchange
                 )
             )
             return ids
@@ -191,7 +194,7 @@ class Calculator:
         asyncio.create_task(
             Calculator.execute(
                 ids, strategy_uuid, start_time, end_time, target, period,
-                runner_name=runner_name, multi_params_list=combos,
+                runner_name=runner_name, multi_params_list=combos, exchange=exchange
             )
         )
         return ids
@@ -207,12 +210,13 @@ class Calculator:
         runner_name: str = "default",
         multi_params: t.Optional[t.Dict[str, t.Any]] = None,
         multi_params_list: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
+        exchange: t.Optional[str] = None
     ):
         """执行策略计算（主进程预处理后立即返回 task_id）。"""
         try:
             src_raw = await Core.prepare_raw(strategy_uuid)
             data = await load_data(
-                start_time, end_time, target if target is not None else [], period
+                start_time, end_time, target if target is not None else [], period, exchange=exchange
             )
             runner: t.Optional[Runer_T] = await get_runner(runner_name)
             if runner is None:
@@ -240,3 +244,14 @@ class Calculator:
             else:
                 for id in ids:
                     TaskCache.set_result(id, f"task-{id} prepare data failed:{e.__str__()}", False)
+                    
+                    
+    @staticmethod
+    async def simulation(strategy_uuid: str, target: t.Union[str, t.Sequence[str], None], min_line: int = 999, period: DataPeriod = DataPeriod.HOUR,
+                         runner_name: str = 'default'
+                         ):
+        async def f():
+            pass
+
+        
+        aSche.add_job(f, trigger='cron')

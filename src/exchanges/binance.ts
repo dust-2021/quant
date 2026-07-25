@@ -277,7 +277,6 @@ export class Binance {
     public async subscribe(key: string, t: tradeType = 'spot', handle: wsEventCallback, cb?: wsCallback) {
         await this.connect(t, 'stream');
         await this.send(t, 'stream', { id: uuidv4(), method: "SUBSCRIBE", params: [key] }, (data: wsResponse) => {
-            console.log(`unsubscribe ${key} resp: ${JSON.stringify(data)}`);
             if (cb) cb(data);
             if (data.status === undefined || data.status === 200) {
                 this.wsEventHandle.set(key, handle);

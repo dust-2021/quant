@@ -9,6 +9,7 @@ def auth(perm: t.Optional[t.Sequence[str]] = None):
         
         @wraps(func)
         async def wrapped(req: web.Request):
+            return await func(req)
             if not await Config.get('Auth'):
                 return await func(req)
             # TODO: 检查权限
