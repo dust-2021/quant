@@ -1,13 +1,16 @@
+import asyncio
 import os
 import sys
-import asyncio
-from config import BASE_PATH
+import typing as t
+
 from aiohttp import web
+
+from config import BASE_PATH
 from database.model import Config
-from utils.types import app_response, AppCode
 from utils.middleware.auth import auth
 from utils.middleware.type_checker import json_post_checker
-import typing as t
+from utils.types import AppCode, app_response
+
 
 async def index(req: web.Request):
     return web.FileResponse(os.path.join(BASE_PATH, "static/dist/index.html"))
@@ -25,7 +28,7 @@ async def get_config(req: web.Request):
 @json_post_checker(necessary_keys={
     "key": str, "value": object
 })
-async def set_config(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None):
+async def set_config(req: web.Request, data: dict[str, t.Any] | None = None):
     if data is None:
         return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="invalid json body"))
     await Config.set(data["key"], data["value"])

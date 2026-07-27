@@ -1,18 +1,18 @@
-from concurrent.futures import ProcessPoolExecutor
+import importlib.util
 import json
 import os
 import typing as t
+from concurrent.futures import ProcessPoolExecutor
 from types import ModuleType
-import importlib.util
-from database.base import async_session
-from database.model import Strategy, Factor
-from utils.logger import setup_logging
+
 from sqlalchemy import select
 
+from database.base import async_session
+from database.model import Factor, Strategy
+from utils.logger import setup_logging
 
-class Core():
-    """
-    """
+
+class Core:
     _pool = ProcessPoolExecutor(max_workers=os.cpu_count() or 1, max_tasks_per_child=100, initializer=setup_logging)
     
     @staticmethod
@@ -25,13 +25,13 @@ class Core():
             return None
         mod = importlib.util.module_from_spec(mod)
         try:
-            exec(content, mod.__dict__)
-        except Exception:
+            exec(content, mod.__dict__)  # noqa: S102
+        except Exception:  # noqa: BLE001
             return None
         return mod
 
     @staticmethod
-    async def prepare_raw(strategy_uuid: str) -> t.Dict[str, t.Any]:
+    async def prepare_raw(strategy_uuid: str) -> dict[str, t.Any]:
         """
         准备策略原始数据（可被 pickle 序列化，用于进程池传递）。
         仅查询数据库获取策略/因子的源码和参数，不加载为模块对象。
@@ -46,14 +46,14 @@ class Core():
             stra = (await s.execute(select(Strategy).filter(Strategy.uuid == strategy_uuid))).scalar()
             if stra is None:
                 raise ValueError(f"strategy {strategy_uuid} not found")
-            factor_uuids: t.List[str] = json.loads(t.cast(str, stra.factors))
+            factor_uuids: list[str] = json.loads(t.cast(str, stra.factors))
             factors = (await s.execute(select(Factor).filter(Factor.uuid.in_(factor_uuids)))).scalars().all()
-            if set(factor_uuids) != set([x.uuid for x in factors]):
+            if set(factor_uuids) != {x.uuid for x in factors}:
                 raise ValueError(f"factors {factor_uuids} not found")
             
-            factors_map: t.Dict[str, Factor] = {str(x.uuid): x for x in factors}
+            factors_map: dict[str, Factor] = {str(x.uuid): x for x in factors}
 
-        factor_src: t.List[t.Dict[str, t.Any]] = []
+        factor_src: list[dict[str, t.Any]] = []
         for u in factor_uuids:
             f = factors_map.get(u)
             if f is None:

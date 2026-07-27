@@ -9,15 +9,15 @@ from config import BASE_PATH
 import os
 
 
-def generate_app() -> web.Application:
-    app = web.Application(client_max_size=50 * 1024 * 1024)  # 50MB
+def generate_app(max_http_payload) -> web.Application:
+    app = web.Application(client_max_size=max_http_payload) 
 
     # 首页路由 - 保持不变
     index_routes = [r for r in base_router if r.path == '/']
     app.add_routes(index_routes)
 
     # API 子应用 - 统一添加 /api 前缀
-    api = web.Application(client_max_size=50 * 1024 * 1024)  # 50MB
+    api = web.Application(client_max_size=max_http_payload) 
     api_routes = [r for r in base_router if r.path != '/']
     api.add_routes(api_routes)
     api.add_routes(strategy_router)

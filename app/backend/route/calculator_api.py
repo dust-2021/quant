@@ -1,10 +1,12 @@
-from sqlalchemy import select
-from aiohttp import web
 import typing as t
-from database.model import Calculator as CalculatorModel
+
+from aiohttp import web
+from sqlalchemy import select
+
 from database.base import async_session
-from utils.types import AppCode, app_response
+from database.model import Calculator as CalculatorModel
 from utils.middleware.type_checker import json_post_checker
+from utils.types import AppCode, app_response
 
 
 async def get_calculators(request: web.Request):
@@ -20,7 +22,7 @@ async def get_calculators(request: web.Request):
 
 
 @json_post_checker(necessary_keys={"name": str, "content": str}, optional_keys={"description": str})
-async def save_calculator(request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None):
+async def save_calculator(request: web.Request, data: dict[str, t.Any] | None = None):
     """新增或更新算子"""
     if data is None:
         return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="缺少请求体"))
@@ -42,7 +44,7 @@ async def save_calculator(request: web.Request, data: t.Optional[t.Dict[str, t.A
 
 
 @json_post_checker(necessary_keys={"name": str})
-async def delete_calculator(request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None):
+async def delete_calculator(request: web.Request, data: dict[str, t.Any] | None = None):
     """删除算子"""
     if data is None:
         return web.json_response(app_response(code=AppCode.DATA_INVALID, msg="缺少请求体"))

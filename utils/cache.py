@@ -1,8 +1,10 @@
-from diskcache import Cache
-from config import BASE_PATH
 import os
 import typing as t
 from collections import namedtuple
+
+from diskcache import Cache
+
+from config import BASE_PATH
 
 TaskResult = namedtuple('TaskResult', ['success', 'data'])
 
@@ -14,5 +16,5 @@ class TaskCache:
         cls._cache.set(f'result-{id}', value=TaskResult(success, value), expire=3600)
         
     @classmethod
-    def get_result(cls, id: str) -> t.Optional[TaskResult]:
-        return t.cast(t.Optional[TaskResult], cls._cache.get(f'result-{id}'))
+    def get_result(cls, id: str) -> TaskResult | None:
+        return t.cast(TaskResult | None, cls._cache.get(f'result-{id}'))

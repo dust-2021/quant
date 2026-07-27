@@ -1,9 +1,12 @@
 import typing as t
-from aiohttp import web
 from functools import wraps
-from utils.types import app_response, AppCode
 
-def json_post_checker(necessary_keys: t.Mapping[str, type], optional_keys: t.Optional[t.Mapping[str, type]] = None):
+from aiohttp import web
+
+from utils.types import AppCode, app_response
+
+
+def json_post_checker(necessary_keys: t.Mapping[str, type], optional_keys: t.Mapping[str, type] | None = None):
     """
     接口参数类型和传入检测
     Example:
@@ -18,7 +21,7 @@ def json_post_checker(necessary_keys: t.Mapping[str, type], optional_keys: t.Opt
     :return:
     """
 
-    def decorator(func: t.Callable[[web.Request, t.Optional[t.Dict[str, t.Any]]], t.Awaitable[web.Response]]) -> t.Callable[[web.Request], t.Awaitable[web.Response]]:
+    def decorator(func: t.Callable[[web.Request, dict[str, t.Any] | None], t.Awaitable[web.Response]]) -> t.Callable[[web.Request], t.Awaitable[web.Response]]:
         @wraps(func)
         async def wrapper(req: web.Request) -> web.Response:
             # 非post跳过检测

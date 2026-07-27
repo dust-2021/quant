@@ -12,6 +12,7 @@ class Config:
     SQLAlchemyLog = "WARNING"
     Auth = False
     DataCenterLink = "postgresql+asyncpg://postgres:064735@127.0.0.1:5432/data_center"
+    MaxHttpPayload = 50 * 1024 * 1024 # 50M
     
     # === 动态配置 ===
     
@@ -20,7 +21,8 @@ class Config:
     ProxyPort = 0
     
     Exchange = ""
-    SecretKeys = dict()
     
+    Model = ""
+    ApiKey = ""
     AgentPrompt = "你是一个量化工具系统的助手"
     

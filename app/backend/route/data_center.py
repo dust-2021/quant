@@ -1,12 +1,15 @@
+import traceback
+import typing as t
+
 from aiohttp import web
 from sqlalchemy import select, text
+
+from database.base import DataPeriod
+from database.base import async_session as dc_async_session
 from database.data_center import get_session
-from database.base import DataPeriod, async_session as dc_async_session
 from database.model import Exchange, Script, Target
-from utils.types import app_response, AppCode
 from utils.middleware.type_checker import json_post_checker
-import typing as t
-import traceback
+from utils.types import AppCode, app_response
 
 
 async def get_exchanges(req: web.Request) -> web.Response:
@@ -18,14 +21,14 @@ async def get_exchanges(req: web.Request) -> web.Response:
         return web.json_response(
             app_response(data=[{"id": r[0].id, "name": r[0].name} for r in rows])
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(
             app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
 
 
 @json_post_checker(necessary_keys={"name": str})
-async def create_exchange(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None) -> web.Response:
+async def create_exchange(req: web.Request, data: dict[str, t.Any] | None = None) -> web.Response:
     """新增交易所"""
     if data is None:
         return web.json_response(
@@ -46,14 +49,14 @@ async def create_exchange(req: web.Request, data: t.Optional[t.Dict[str, t.Any]]
             s.add(Exchange(name=name))
             await s.commit()
         return web.json_response(app_response(msg=f"交易所 '{name}' 已创建"))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(
             app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
 
 
 @json_post_checker(necessary_keys={"name": str})
-async def delete_exchange(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None) -> web.Response:
+async def delete_exchange(req: web.Request, data: dict[str, t.Any] | None = None) -> web.Response:
     """删除交易所（同时删除该交易所下所有标的）"""
     if data is None:
         return web.json_response(
@@ -75,7 +78,7 @@ async def delete_exchange(req: web.Request, data: t.Optional[t.Dict[str, t.Any]]
             await s.delete(row[0])
             await s.commit()
         return web.json_response(app_response(msg=f"交易所 '{name}' 已删除"))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(
             app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
@@ -95,14 +98,14 @@ async def get_scripts(req: web.Request) -> web.Response:
                 ]
             )
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(
             app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
 
 
 @json_post_checker(necessary_keys={"name": str, "content": str})
-async def create_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None) -> web.Response:
+async def create_script(req: web.Request, data: dict[str, t.Any] | None = None) -> web.Response:
     """新增或更新脚本"""
     if data is None:
         return web.json_response(
@@ -119,14 +122,14 @@ async def create_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] =
                 s.add(Script(name=data["name"], content=data["content"]))
             await s.commit()
         return web.json_response(app_response(msg="脚本已保存"))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(
             app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
 
 
 @json_post_checker(necessary_keys={"name": str}, optional_keys={"params": dict})
-async def execute_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None) -> web.Response:
+async def execute_script(req: web.Request, data: dict[str, t.Any] | None = None) -> web.Response:
     """加载并执行数据中心脚本"""
     if data is None:
         return web.json_response(
@@ -137,14 +140,14 @@ async def execute_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] 
             data["name"], **(data.get("params") or {})
         )
         return web.json_response(app_response(data=result))
-    except Exception:
+    except Exception:  # noqa: BLE001
         return web.json_response(
             app_response(code=AppCode.EXECUTE_FAILED, msg=traceback.format_exc())
         )
 
 
 @json_post_checker(necessary_keys={"name": str})
-async def delete_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None) -> web.Response:
+async def delete_script(req: web.Request, data: dict[str, t.Any] | None = None) -> web.Response:
     """删除脚本"""
     if data is None:
         return web.json_response(
@@ -162,7 +165,7 @@ async def delete_script(req: web.Request, data: t.Optional[t.Dict[str, t.Any]] =
             await s.delete(row[0])
             await s.commit()
         return web.json_response(app_response(msg=f"脚本 '{name}' 已删除"))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(
             app_response(code=AppCode.DATA_NOT_READY, msg=str(e))
         )
@@ -182,7 +185,7 @@ async def get_targets(req: web.Request) -> web.Response:
             result = await s.execute(q.limit(50))
             codes = result.scalars().all()
         return web.json_response(app_response(data=list(codes)))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(app_response(code=AppCode.DATA_NOT_READY, msg=str(e)))
 
 
@@ -203,7 +206,7 @@ async def check_data_table(req: web.Request) -> web.Response:
             result = await s.execute(text(f"select exists(select 1 from information_schema.tables where table_name='{table_name}')"))
             exists = result.fetchone()
         return web.json_response(app_response(data={"table": table_name, "exists": exists[0] if exists is not None else False}))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(app_response(code=AppCode.DATA_NOT_READY, msg=str(e)))
 
 
@@ -277,7 +280,7 @@ async def check_data_integrity(req: web.Request) -> web.Response:
                 "all_complete": all_complete,
                 "groups": groups,
             }))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(app_response(code=AppCode.DATA_NOT_READY, msg=str(e)))
 
 

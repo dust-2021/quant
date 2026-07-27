@@ -3,13 +3,15 @@ import typing as t
 import numpy as np
 import pandas as pd
 
+from utils.types import Runner_Res
+
 
 def run(
     df: pd.DataFrame,
-    ctx: t.Dict[str, t.Any],
-    params: t.Dict[str, t.Any],
-    multi_params: t.Dict[str, t.Any],
-):
+    ctx: dict[str, t.Any],
+    params: dict[str, t.Any],
+    is_multi: bool,
+) -> Runner_Res:
     if df["code"].nunique() != 1:
         raise ValueError("default runner 只支持单code回测")
     df.sort_values(by=["open_time"], inplace=True)
@@ -42,7 +44,7 @@ def run(
     )
     df.loc[~df["__istrade"], "__timeSell"] = None
     # 同步同交易单的sell价格，最终未平仓视为最后一条close价格平仓
-    df["__priceSell"] = df["__priceSell"].bfill().fillna(df["close"].values[-1])
+    df["__priceSell"] = df["__priceSell"].bfill().fillna(t.cast(int, df["close"].values[-1]))
     df["__timeSell"] = df["__timeSell"].bfill()
     df["__timeSell"] = df["__timeSell"].shift(-1)
     # 算出该笔订单的买入价和卖出价格
@@ -95,7 +97,7 @@ def run(
 
     # ============ 计算指标 ================
 
-    result = {
+    result: Runner_Res = {
         "startTime": ctx['start_time'],
         "endTime": ctx['end_time'],
         "target": ctx['target'],
@@ -104,12 +106,15 @@ def run(
         "liquidation": int(liquidation_date) if liquidation_date is not None else None,  # 爆仓
         "premium": (df["__premium"] * df[funding_col]).sum(),  # 手续费
         "data": None
-        if multi_params
-        else df.to_json(index=False, orient="records"),  # 计算数据
+        if (is_multi or len(df) > 1000_000)
+        else df.to_json(index=False, orient="records"),  # 计算数据, 多参数时或者大于百万条不返回
         "maximumDrawdown": -df["__drawdown"].min()
         if df["__drawdown"].min() < 0
         else 0,  # 最大回撤
-        "netValue": df[funding_col].values[-1] - df[funding_col].values[0],  # 净值
+        "netValue": t.cast(int, df[funding_col].values[-1]) - t.cast(int, df[funding_col].values[0]),  # 净值,
+        "annualizedRateOfReturn": 0,
+        "monthlyRateOfReturn": 0,
+        "tradeData": ""
     }
     # 年化收益率
     result["annualizedRateOfReturn"] = (

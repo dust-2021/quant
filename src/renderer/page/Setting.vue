@@ -8,7 +8,8 @@ const dataCenterLink = ref<string>('');
 const baseLog = ref<string>('INFO');
 const webLog = ref<string>('INFO');
 const sqlalchemyLog = ref<string>('WARNING');
-const auth = ref<boolean>(false);
+// const auth = ref<boolean>(false);
+const maxHttpPayload = ref<number>(1024 * 1024);
 
 const logLevels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
 
@@ -44,7 +45,8 @@ onBeforeMount(async () => {
     baseLog.value = await getSetting('BaseLog') || 'INFO';
     webLog.value = await getSetting('WebLog') || 'INFO';
     sqlalchemyLog.value = await getSetting('SQLAlchemyLog') || 'WARNING';
-    auth.value = (await getSetting('Auth') || 'false') === 'true';
+    // auth.value = (await getSetting('Auth') || 'false') === 'true';
+    maxHttpPayload.value = await getSetting('MaxHttpPayload') || 1024 * 1024;
 
     proxyAddress.value = await getSetting('ProxyAddress') || '';
     proxyPort.value = Number(await getSetting('ProxyPort')) || 0;
@@ -79,8 +81,11 @@ onBeforeMount(async () => {
                             <ElOption v-for="lv in logLevels" :key="lv" :label="lv" :value="lv" />
                         </ElSelect>
                     </ElFormItem>
-                    <ElFormItem label="权限认证">
+                    <!-- <ElFormItem label="权限认证">
                         <ElSwitch v-model="auth" @change="setSetting('Auth', auth)"></ElSwitch>
+                    </ElFormItem> -->
+                    <ElFormItem label="http报文限制">
+                        <ElInput v-model="maxHttpPayload" @change="setSetting('MaxHttpPayload', Number(maxHttpPayload))" type="number" style="width: 140px;"></ElInput>
                     </ElFormItem>
                 </ElForm>
             </ElCol>
@@ -98,7 +103,7 @@ onBeforeMount(async () => {
             </ElFormItem>
             <ElFormItem label="代理端口">
                 <ElTooltip content="代理端口，用于访问互联网">
-                    <ElInput style="width: 120px;" type="number" v-model="proxyPort" @change="setSetting('ProxyPort', proxyPort)" />
+                    <ElInput style="width: 120px;" type="number" v-model="proxyPort" @change="setSetting('ProxyPort', Number(proxyPort))" />
                 </ElTooltip>
             </ElFormItem>
             <ElFormItem label="系统管理">

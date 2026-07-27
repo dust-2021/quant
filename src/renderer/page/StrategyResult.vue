@@ -115,7 +115,10 @@ function formatPeriod(seconds: number | null | undefined): string {
 }
 
 function exportCsv() {
-  if (!singleResult.value?.data) return
+  if (!singleResult.value?.data) {
+    ElMessage.warning('无数据');
+    return
+  }
   try {
     const rows = JSON.parse(singleResult.value.data)
     if (!Array.isArray(rows) || !rows.length) return

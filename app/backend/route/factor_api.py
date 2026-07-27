@@ -1,13 +1,15 @@
 import datetime
-from database.model import Factor, FactorGroup
-from database.base import async_session
-from utils.middleware.auth import auth
-from utils.middleware.type_checker import json_post_checker
-from aiohttp import web
-from utils.types import app_response, AppCode
-from sqlalchemy import select
 import typing as t
 import uuid
+
+from aiohttp import web
+from sqlalchemy import select
+
+from database.base import async_session
+from database.model import Factor, FactorGroup
+from utils.middleware.auth import auth
+from utils.middleware.type_checker import json_post_checker
+from utils.types import AppCode, app_response
 
 
 @auth(perm=["factor.read"])
@@ -60,7 +62,7 @@ async def get_factor(request: web.Request):
     },
 )
 async def update_factor(
-    request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None
+    request: web.Request, data: dict[str, t.Any] | None = None
 ):
     if data is None:
         return web.json_response(
@@ -88,14 +90,14 @@ async def update_factor(
                         app_response(code=AppCode.NOT_FOUND, msg="factor not found")
                     )
                 fac = resp[0]
-                fac.update_time = int(datetime.datetime.now().timestamp())
+                fac.update_time = int(datetime.datetime.now().timestamp()) 
                 fac.name = data.get("name", fac.name)
                 fac.group = data.get("group", fac.group)
                 fac.description = data.get("description", fac.description)
                 fac.params = data.get("params", fac.params)
                 fac.content = data.get("content", fac.content)
                 await s.flush()
-        except Exception as e:
+        except Exception as e: 
             await s.rollback()
             return web.json_response(
                 app_response(code=AppCode.UNKNOWN_ERROR, msg=str(e))
@@ -133,7 +135,7 @@ async def get_factor_list(request: web.Request):
 @auth(perm=["factor.write"])
 @json_post_checker(necessary_keys={"uuid": str})
 async def delete_factor(
-    request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None
+    request: web.Request, data: dict[str, t.Any] | None = None
 ):
     if data is None:
         return web.json_response(
@@ -173,7 +175,7 @@ async def get_factor_group(request: web.Request):
     optional_keys={"description": str},
 )
 async def create_factor_group(
-    request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None
+    request: web.Request, data: dict[str, t.Any] | None = None
 ):
     if data is None:
         return web.json_response(
@@ -208,7 +210,7 @@ async def create_factor_group(
 
 @auth(perm=["factor.write"])
 @json_post_checker(necessary_keys={"name": str})
-async def delete_factor_group(request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None):
+async def delete_factor_group(request: web.Request, data: dict[str, t.Any] | None = None):
     """删除分组，并将该分组下所有因子移到 default 分组"""
     if data is None:
         return web.json_response(

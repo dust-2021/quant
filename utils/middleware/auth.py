@@ -1,10 +1,13 @@
 import typing as t
 from functools import wraps
-from aiohttp import web
-from utils.types import app_response, AppCode
-from database.model import Config
 
-def auth(perm: t.Optional[t.Sequence[str]] = None):
+from aiohttp import web
+
+from database.model import Config
+from utils.types import AppCode, app_response
+
+
+def auth(perm: t.Sequence[str] | None = None):
     def wrapper(func: t.Callable[[web.Request], t.Awaitable[web.Response]]):
         
         @wraps(func)

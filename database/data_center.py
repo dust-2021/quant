@@ -1,23 +1,25 @@
+import typing as t
+
+import pandas as pd
 from sqlalchemy import (
+    and_,
     inspect,
     select,
     text,
-    and_,
 )
 from sqlalchemy.ext.asyncio import (
-    create_async_engine,
     AsyncEngine,
-    async_sessionmaker,
     AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
-import typing as t
-import pandas as pd
-from .model import Config as ConfigModel, Target
+
 from .base import DataPeriod, async_session
+from .model import Config as ConfigModel
+from .model import Target
 
-
-_engine: t.Optional[AsyncEngine] = None
-_session: t.Optional[async_sessionmaker[AsyncSession]] = None
+_engine: AsyncEngine | None = None
+_session: async_sessionmaker[AsyncSession] | None = None
 
 
 async def check_target_table(name: str):
@@ -83,7 +85,7 @@ def get_session() -> async_sessionmaker[AsyncSession]:
 
 
 async def load_data(
-    s: int, e: int, target: t.Sequence[str], p: DataPeriod = DataPeriod.HOUR, exchange: t.Optional[str] = None
+    s: int, e: int, target: t.Sequence[str], p: DataPeriod = DataPeriod.HOUR, exchange: str | None = None
 ) -> pd.DataFrame:
     """从数据中心加载数据，检查每个数据表是否存在，存在则查询并拼接为 DataFrame。
 
@@ -101,7 +103,7 @@ async def load_data(
     """
     s -= s % p.value
     e -= e % p.value
-    target_s: t.Set[str] = set(target)
+    target_s: set[str] = set(target)
     if _engine is None:
         raise ValueError("数据中心未链接")
     if exchange is None:
@@ -124,7 +126,7 @@ async def load_data(
                 )
             )
         )
-        code_tables: t.List[t.Tuple[str, str]] = [
+        code_tables: list[tuple[str, str]] = [
             (t.cast(str, x.code), x.src_table(p)) for x in resp.scalars().all()
         ]
 
@@ -139,7 +141,7 @@ async def load_data(
 
     async with get_session()() as session:
         # 查询各表数据并拼接
-        frames: t.List[pd.DataFrame] = []
+        frames: list[pd.DataFrame] = []
         for code, table_name in code_tables:
             # 使用引擎方言正确引用表名，兼容不同数据库
             query = f'SELECT * FROM "{table_name}" WHERE open_time >= :start_time AND open_time <= :end_time'

@@ -1,9 +1,10 @@
-from sqlalchemy import text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from enum import Enum
 import os
 import typing as t
+from enum import Enum
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.declarative import declarative_base
 
 db_path = os.path.join(os.getcwd(), 'locals', 'quant.db')
 

@@ -1,15 +1,15 @@
+import typing as t
+
+import numpy as np
+from aiohttp import web
 from sqlalchemy import select
 
 from cores.executor.calculator import Calculator
+from database.base import DataPeriod, async_session
+from database.model import Calculator as CalculatorModel
 from utils.cache import TaskCache
-from database.base import DataPeriod
 from utils.middleware.type_checker import json_post_checker
 from utils.types import AppCode, app_response
-from aiohttp import web
-import typing as t
-from database.model import Calculator as CalculatorModel
-from database.base import async_session
-import numpy as np
 
 
 @json_post_checker(necessary_keys={"uuid": str, "start_time": int, "end_time": int},
@@ -17,7 +17,7 @@ import numpy as np
                                   "multi_params": dict, "multi_expressions": dict, "runner_name": str,
                                   })
 async def execute_strategy(
-    request: web.Request, data: t.Optional[t.Dict[str, t.Any]] = None
+    request: web.Request, data: dict[str, t.Any] | None = None
 ):
     if data is None:
         return web.json_response(
@@ -29,7 +29,7 @@ async def execute_strategy(
             app_response(code=AppCode.DATA_INVALID, msg="invalid period")
         )
     # 处理多参数：将 values 展开为 list
-    multi_params: t.Dict[str, t.List[t.Any]] = {}
+    multi_params: dict[str, list[t.Any]] = {}
     raw_multi = data.get("multi_params", {})
     if isinstance(raw_multi, dict):
         for k, v in raw_multi.items():
@@ -37,7 +37,7 @@ async def execute_strategy(
                 multi_params[k] = v
             else:
                 multi_params[k] = [v]
-    multi_expressions: t.Dict[str, str] = data.get("multi_expressions", {}) or {}
+    multi_expressions: dict[str, str] = data.get("multi_expressions", {}) or {}
     try:
         result_id = await Calculator.async_task(
             strategy_uuid=data["uuid"],
@@ -50,7 +50,7 @@ async def execute_strategy(
             runner_name=data.get("runner_name", "default"),
             exchange=data.get('exchange', None)
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return web.json_response(app_response(code=AppCode.UNKNOWN_ERROR, msg=e.__str__()))
     return web.json_response(app_response(data=result_id))
 

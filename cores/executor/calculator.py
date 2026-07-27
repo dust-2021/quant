@@ -1,36 +1,36 @@
 import asyncio
+import itertools
+import traceback
 import typing as t
 import uuid
-import traceback
-import itertools
 
 import loguru
-
-from cores.backtest.runner_loader import get_runner, Runer_T
-from .base import Core
 import pandas as pd
+
+from cores.backtest.runner_loader import Runner_T, get_runner
 from database.base import DataPeriod
 from database.data_center import load_data
 from utils.cache import TaskCache
-
 from utils.scheduler import aSche
+
+from .base import Core
 
 # 多参数键前缀
 PREFIX_STRATEGY = "_strategy."
 PREFIX_FACTOR = "_factor."
 
-_run_T: t.TypeAlias = t.Callable[[pd.DataFrame], pd.DataFrame]
+_run_T: t.TypeAlias = t.Callable[[pd.DataFrame], pd.DataFrame]  # noqa: PYI042
 
 
-def _split_prefixed_params(flat: t.Dict[str, t.Any]) -> t.Tuple[t.Dict[str, t.Any], t.Dict[str, t.Dict[str, t.Any]]]:
+def _split_prefixed_params(flat: dict[str, t.Any]) -> tuple[dict[str, t.Any], dict[str, dict[str, t.Any]]]:
     """将带前缀的扁平参数字典拆分为策略参数和因子参数。
     Args:
         flat: {"_strategy.leverage": 1, "_factor.uuid1.window": 5, ...}
     Returns:
         (strategy_overrides: {param: value}, factor_overrides: {uuid: {param: value}})
     """
-    strat: t.Dict[str, t.Any] = {}
-    factors: t.Dict[str, t.Dict[str, t.Any]] = {}
+    strat: dict[str, t.Any] = {}
+    factors: dict[str, dict[str, t.Any]] = {}
     for key, val in flat.items():
         if key.startswith(PREFIX_STRATEGY):
             strat[key[len(PREFIX_STRATEGY):]] = val
@@ -44,11 +44,11 @@ def _split_prefixed_params(flat: t.Dict[str, t.Any]) -> t.Tuple[t.Dict[str, t.An
 
 
 def _run_task(
-    src_raw: t.Dict[str, t.Any],
+    src_raw: dict[str, t.Any],
     data: pd.DataFrame,
-    multi_params: t.Dict[str, t.Any],
-    runner: Runer_T,
-    ctx: t.Dict[str, t.Any],
+    multi_params: dict[str, t.Any],
+    runner: Runner_T,
+    ctx: dict[str, t.Any],
     uuid: str,
 ) -> None:
     """
@@ -64,8 +64,8 @@ def _run_task(
         return
     try:
         strategy_name: str = src_raw["strategy"]["name"]
-        strategy_params: t.List[t.Dict[str, t.Any]] = src_raw["strategy"]["params"]
-        factors_raw: t.List[t.Dict[str, t.Any]] = src_raw["factors"]
+        strategy_params: list[dict[str, t.Any]] = src_raw["strategy"]["params"]
+        factors_raw: list[dict[str, t.Any]] = src_raw["factors"]
 
         # 拆分带前缀的多参数
         strat_overrides, factor_overrides = _split_prefixed_params(multi_params)
@@ -79,21 +79,21 @@ def _run_task(
             f_mod = Core.load_file(f_raw["name"], f_raw["content"])
             if f_mod is None:
                 raise ValueError(f"failed to load factor module: {f_raw['name']}")
-            func: t.Optional[_run_T] = getattr(f_mod, "run", None)
+            func: _run_T | None = getattr(f_mod, "run", None)
             if func is None:
                 raise NotImplementedError(f"cant find run function in factor {f_raw['name']}")
             # 合并因子默认参数 + 该因子专属的覆盖参数
             factor_merged = {x["name"]: x["v"] for x in f_raw["params"]}
             factor_merged.update(factor_overrides.get(f_raw.get("uuid", ""), {}))
-            setattr(f_mod, "params", factor_merged)
-            setattr(f_mod, "context", ctx)
+            setattr(f_mod, "params", factor_merged)  # noqa: B010
+            setattr(f_mod, "context", ctx)  # noqa: B010
             data = func(data)
 
         # 运行策略
         strategy_mod = Core.load_file(strategy_name, src_raw["strategy"]["content"])
         if strategy_mod is None:
             raise ValueError(f"failed to load strategy module: {strategy_name}")
-        strategy_func: t.Optional[_run_T] = getattr(strategy_mod, "run", None)
+        strategy_func: _run_T | None = getattr(strategy_mod, "run", None)
         if strategy_func is None:
             raise NotImplementedError(f"cant find run function in strategy {strategy_name}")
         strategy_merged = {x["name"]: x["v"] for x in strategy_params}
@@ -108,8 +108,8 @@ def _run_task(
         strategy_mod.__setattr__("params", strategy_merged)
 
         # backtest
-        result = runner(data, ctx, getattr(strategy_mod, "params", dict()), multi_params)
-    except Exception as e:
+        result = runner(data, ctx, getattr(strategy_mod, "params", {}), multi_params.__len__() != 0)
+    except Exception as e:  # noqa: BLE001
         TaskCache.set_result(uuid, traceback.format_exc(), False)
         loguru.logger.error(f"task {uuid} failed: {e.__str__()}")
     else:
@@ -121,7 +121,7 @@ class Calculator:
     MAX_CARTESIAN = 1000
 
     # 表达式求值安全内置函数
-    _SAFE_BUILTINS = {
+    _SAFE_BUILTINS: t.ClassVar = {
         "range": range, "len": len, "int": int, "float": float,
         "str": str, "bool": bool, "list": list, "abs": abs,
         "min": min, "max": max, "round": round, "sum": sum,
@@ -131,7 +131,7 @@ class Calculator:
         raise NotImplementedError("Calculator is an abstract class")
 
     @staticmethod
-    def _cartesian_product(multi_params: t.Dict[str, t.List[t.Any]]) -> t.List[t.Dict[str, t.Any]]:
+    def _cartesian_product(multi_params: dict[str, list[t.Any]]) -> list[dict[str, t.Any]]:
         """计算笛卡尔积，返回扁平键组合列表。"""
         if not multi_params:
             return [{}]
@@ -145,12 +145,12 @@ class Calculator:
         strategy_uuid: str,
         start_time: int,
         end_time: int,
-        target: t.Union[str, t.Sequence[str], None],
+        target: str | t.Sequence[str] | None,
         period: DataPeriod = DataPeriod.HOUR,
-        multi_params: t.Optional[t.Dict[str, t.List[t.Any]]] = None,
-        multi_expressions: t.Optional[t.Dict[str, str]] = None,
+        multi_params: dict[str, list[t.Any]] | None = None,
+        multi_expressions: dict[str, str] | None = None,
         runner_name: str = "default",
-        exchange: t.Optional[str] = None
+        exchange: str | None = None
     ):
         """
         无等待任务。
@@ -163,12 +163,12 @@ class Calculator:
             multi_expressions = {}
 
         # 解析表达式，覆盖 multi_params 中同名键的值
-        merged: t.Dict[str, t.List[t.Any]] = dict(multi_params)
+        merged: dict[str, list[t.Any]] = dict(multi_params)
         for key, expr in multi_expressions.items():
             try:
                 result = eval(expr, {"__builtins__": Calculator._SAFE_BUILTINS}, {})
                 if not isinstance(result, (list, tuple)):
-                    raise ValueError(f"表达式结果必须为列表，实际为: {type(result).__name__}")
+                    raise TypeError(f"表达式结果必须为列表，实际为: {type(result).__name__}")
                 merged[key] = list(result)
             except Exception as e:
                 raise ValueError(f"参数 '{key}' 表达式解析失败: {e}") from e
@@ -201,16 +201,16 @@ class Calculator:
 
     @staticmethod
     async def execute(
-        ids: t.Union[str, t.List[str]],
+        ids: str | list[str],
         strategy_uuid: str,
         start_time: int,
         end_time: int,
-        target: t.Union[str, t.Sequence[str], None],
+        target: str | t.Sequence[str] | None,
         period: DataPeriod = DataPeriod.HOUR,
         runner_name: str = "default",
-        multi_params: t.Optional[t.Dict[str, t.Any]] = None,
-        multi_params_list: t.Optional[t.List[t.Dict[str, t.Any]]] = None,
-        exchange: t.Optional[str] = None
+        multi_params: dict[str, t.Any] | None = None,
+        multi_params_list: list[dict[str, t.Any]] | None = None,
+        exchange: str | None = None
     ):
         """执行策略计算（主进程预处理后立即返回 task_id）。"""
         try:
@@ -218,7 +218,7 @@ class Calculator:
             data = await load_data(
                 start_time, end_time, target if target is not None else [], period, exchange=exchange
             )
-            runner: t.Optional[Runer_T] = await get_runner(runner_name)
+            runner: Runner_T | None = await get_runner(runner_name)
             if runner is None:
                 raise ValueError(f"加载回测执行器失败：{runner_name}")
 
@@ -238,7 +238,7 @@ class Calculator:
                 Core.submit_task(
                     _run_task, src_raw, data, multi_params or {}, runner, ctx, ids
                 )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if isinstance(ids, str):
                 TaskCache.set_result(ids, f"task-{ids} prepare data failed:{e.__str__()}", False)
             else:
@@ -247,7 +247,7 @@ class Calculator:
                     
                     
     @staticmethod
-    async def simulation(strategy_uuid: str, target: t.Union[str, t.Sequence[str], None], min_line: int = 999, period: DataPeriod = DataPeriod.HOUR,
+    async def simulation(strategy_uuid: str, target: str | t.Sequence[str] | None, min_line: int = 999, period: DataPeriod = DataPeriod.HOUR,
                          runner_name: str = 'default'
                          ):
         async def f():

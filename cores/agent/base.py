@@ -1,19 +1,20 @@
-from langchain.agents import create_agent
-from langchain.tools import tool, BaseTool
-from utils.types import SingletonMeta
 import typing as t
-import asyncio
-from loguru import logger
-from database.model import Config
 
-model_T: t.TypeAlias = t.Literal['deepseek-v4-pro', '']
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langchain.tools import BaseTool, tool
+from loguru import logger
+
+from utils.types import SingletonMeta
+
+Model_T: t.TypeAlias = t.Literal['deepseek-v4-pro', '']
 
 class toolMeta(type):
     """
     agent 工具函数管理
     """
     
-    ALL: t.List[BaseTool] = []
+    ALL: t.ClassVar[list[BaseTool]] = []
     
     def __new__(cls, name: str, bases: tuple[type, ...], namespace: dict[str, t.Any], /, **kwds: t.Any):
         class_meta: type =  type(name, bases, namespace, **kwds)
@@ -25,11 +26,11 @@ class toolMeta(type):
 
 
 class MyAgent(metaclass=SingletonMeta):
-    """"""
     
-    def __init__(self, mode: model_T = asyncio.run(Config.get(""))) -> None:
-        self.agent = create_agent(mode, tools=[])
+    def __init__(self, mode: Model_T) -> None:
+        self.model = init_chat_model(mode)
+        self.agent = create_agent(self.model, tools=toolMeta.ALL)
 
     
-    def send(self, msg: str):
+    async def send(self, msg: str):
         pass

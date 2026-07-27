@@ -1,14 +1,25 @@
 import datetime
 import importlib.util
 import inspect as insp
-from sqlalchemy import Column, Integer, String, Text, PickleType, UniqueConstraint
-from .base import DataPeriod, base
-import uuid
-from database.base import async_session
-from sqlalchemy import select, and_
-from asyncio import locks
 import typing as t
+import uuid
+from asyncio import locks
+
+from sqlalchemy import (
+    Column,
+    Integer,
+    PickleType,
+    String,
+    Text,
+    UniqueConstraint,
+    and_,
+    select,
+)
+
 from config import Config as ConfigEnum
+from database.base import async_session
+
+from .base import DataPeriod, base
 
 
 class Config(base):
@@ -18,7 +29,7 @@ class Config(base):
     
     __tablename__ = "config"
     
-    _cache: t.Dict[str, t.Any] = {}
+    _cache: t.ClassVar[dict[str, t.Any]] = {}
     _cache_lock = locks.Lock()
 
     id = Column(Integer, primary_key=True)
@@ -75,8 +86,8 @@ class Strategy(base):
     uuid = Column(String(64), nullable=False, index=True, unique=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)
     version = Column(String(255), nullable=False, default="0.0.1", comment="版本")
-    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))
-    update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))
+    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005
+    update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005
     group = Column(String(255), nullable=False,default="", index=True, comment="分组")
     description = Column(Text, nullable=True)
     factors = Column(String(1 << 16), nullable=False, default="[]", comment="因子uuid的json字符串")
@@ -99,8 +110,8 @@ class Factor(base):
     uuid = Column(String(64), nullable=False, index=True, unique=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)
     version = Column(String(255), nullable=False, default="0.0.1", comment="版本")
-    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))
-    update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))
+    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005
+    update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005
     description = Column(Text, nullable=True)
     content = Column(Text, nullable=False, default="", comment="因子内容")
     params = Column(PickleType, comment="默认参数")
@@ -120,8 +131,8 @@ class Calculator(base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False, index=True, unique=True)
-    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))
-    update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))
+    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005
+    update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005
     description = Column(Text, nullable=True)
     content = Column(Text, nullable=False, default="", comment="计算器内容")
     
@@ -147,7 +158,7 @@ class StrategyResult(base):
     chart_data = Column(Text, nullable=True, comment="图表数据JSON(单任务时)")
     multi_param_keys = Column(PickleType, comment="多参数键列表")
     multi_results = Column(PickleType, comment="多参数各子结果 [{key_values: {k:v}, metrics: {}}]")
-    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))
+    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005
 
 
 # =========== 数据中心逻辑表 ===============
@@ -190,10 +201,10 @@ class Script(base):
         for key, val in context.items():
             setattr(mod, key, val)
         try:
-            exec(t.cast(str, script.content), mod.__dict__)
+            exec(t.cast(str, script.content), mod.__dict__)  # noqa: S102
         except Exception as e:
             raise RuntimeError(f"执行脚本 '{name}' 时出错: {e}") from e
-        func: t.Optional[t.Callable] = getattr(mod, "run", None)
+        func: t.Callable | None = getattr(mod, "run", None)
         if func is None:
             raise NotImplementedError(f"脚本 '{name}' 必须定义 run 函数")
         result = func()
