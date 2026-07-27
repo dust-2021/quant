@@ -180,6 +180,7 @@ class Calculator:
                 f"参数组合数 {combo_count} 超过上限 {Calculator.MAX_CARTESIAN}，请减少参数或取值"
             )
 
+        # TODO: 非本地部署时使用mq实现
         if combo_count <= 1:
             ids = str(uuid.uuid4())
             asyncio.create_task(
