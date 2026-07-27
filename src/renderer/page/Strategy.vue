@@ -420,6 +420,7 @@ async function handleDeleteResult(resultUuid: string) {
 onBeforeMount(async () => {
     fetchGroupOptions();
     await loadStrategy();
+    if (!props.uuid) strategyLoaded.value = true;
 });
 
 // 版本切换时（同一组件复用）重新加载策略数据
