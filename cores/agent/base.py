@@ -1,36 +1,58 @@
 import typing as t
 
 from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
 from langchain.tools import BaseTool, tool
+from langchain_openai import ChatOpenAI
 from loguru import logger
 
+from database.model import Config as ConfDb
 from utils.types import SingletonMeta
 
-Model_T: t.TypeAlias = t.Literal['deepseek-v4-pro', '']
+Model_T: t.TypeAlias = t.Literal["deepseek-v4-pro", "gpt"]
 
-class toolMeta(type):
-    """
-    agent 工具函数管理
-    """
+Model_M: t.Mapping[Model_T, type[ChatOpenAI]] = {
+    "deepseek-v4-pro": ChatOpenAI,
+    "gpt": ChatOpenAI,
+}
+
+Tool_T: t.TypeAlias = t.Callable[..., t.Any | t.Awaitable[t.Any]]
+
+class toolManager:
     
     ALL: t.ClassVar[list[BaseTool]] = []
     
-    def __new__(cls, name: str, bases: tuple[type, ...], namespace: dict[str, t.Any], /, **kwds: t.Any):
-        class_meta: type =  type(name, bases, namespace, **kwds)
-        if class_meta.__call__.__doc__ == "":
-            logger.warning(f'agent tool \'{class_meta.__name__}\' without doc')
-        cls.ALL.append(tool(class_meta.__call__))
+    def __init__(self, desc: str = "", perms: list[str] | None = None, **kwargs) -> None:
+        self.desc = desc
+        self.perms = perms
+        self.kwargs = kwargs
         
+    def permission_check(self, user_perms: t.Sequence[str]) -> bool:
+        if self.perms is None:
+            return True
+        return any(perm in user_perms for perm in self.perms)
     
+    def __call__(self, func: t.Callable[..., t.Any]) -> t.Any:
+        
+        def wrapper(*args, **kwargs):
+            if not self.permission_check(user_perms=[]):  # TODO: 获取用户权限
+                logger.warning(f"Permission denied for tool {func.__name__}")
+                raise PermissionError(f"Permission denied for tool {func.__name__}")
+            return func(*args, **kwargs)
+        
+        tool_Func = tool(wrapper, description=self.desc if func.__doc__ is None else func.__doc__, **self.kwargs)
+        self.ALL.append(tool_Func)
+        return tool_Func
 
 
 class MyAgent(metaclass=SingletonMeta):
-    
     def __init__(self, mode: Model_T) -> None:
-        self.model = init_chat_model(mode)
-        self.agent = create_agent(self.model, tools=toolMeta.ALL)
+        self.model = Model_M.get(mode, ChatOpenAI)(
+            model=mode,
+            api_key=lambda: ConfDb.get("OpenAIKey"),
+            temperature=0.0,
+            max_retries=3,
+        )
+        self.agent = create_agent(self.model, tools=toolManager.ALL)
 
-    
     async def send(self, msg: str):
         pass

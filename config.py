@@ -24,5 +24,5 @@ class Config:
     
     Model = ""
     ApiKey = ""
-    AgentPrompt = "你是一个量化工具系统的助手"
+    AgentPrompt = "你是一个量化回测工具系统的助手"
     

@@ -39,7 +39,7 @@ async def main():
     logger.info(f"start app at port:{port}")
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner=runner, host="127.0.0.1", port=port)
+    site = web.TCPSite(runner=runner, host="0.0.0.0", port=port)
     await site.start()
     await open_browser()
     while True:

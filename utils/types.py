@@ -27,6 +27,13 @@ def app_response(data: t.Any | None = None, code: AppCode = AppCode.SUCCESS, msg
     return {"code": code.value, "msg": msg}
 
 
+class Permission(enum.Enum):
+    
+    STRATEGY_READ = 'STRATEGY_READ'
+    STRATEGY_WRITE = 'STRATEGY_WRITE'
+    
+
+
 class SingletonMeta(type):
     """线程安全的单例元类"""
     _instances: t.ClassVar[dict[type, object]] = {}
