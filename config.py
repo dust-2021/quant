@@ -11,7 +11,7 @@ class Config:
     WebLog = 'INFO'
     SQLAlchemyLog = "WARNING"
     Auth = False
-    DataCenterLink = "postgresql+asyncpg://postgres:064735@127.0.0.1:5432/data_center"
+    DataCenterLink = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/data_center"
     MaxHttpPayload = 50 * 1024 * 1024 # 50M
     
     # === 动态配置 ===

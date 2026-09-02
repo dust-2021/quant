@@ -12,7 +12,7 @@ const MAX_CHART_ROWS = 10000
 const chartRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
 const chartReady = ref(false)
-const chartDataTooLarge = ref(false)
+const isLargeData = ref(false)
 const colorReversed = ref(false)
 const candlestickData = ref<any[]>([])
 const fundingData = ref<any[]>([])
@@ -42,17 +42,14 @@ function parseChartData() {
   signalMarkData.value = []
   allRows.value = []
   dataCount.value = 0
-  chartDataTooLarge.value = false
+  isLargeData.value = false
   periodMs.value = 3600000
   availableFields.value = []
   if (!props.dataJson) return
   try {
     const arr = JSON.parse(props.dataJson)
     if (!Array.isArray(arr)) return
-    if (arr.length > MAX_CHART_ROWS) {
-      chartDataTooLarge.value = true
-      return
-    }
+    isLargeData.value = arr.length > MAX_CHART_ROWS
     allRows.value = arr
     dataCount.value = arr.length
     if (arr.length >= 2) {
@@ -84,6 +81,23 @@ function parseChartData() {
   } catch { /* ignore */ }
 }
 
+function buildXAxisData() {
+  return candlestickData.value.map((item: any[]) => {
+    const date = new Date(item[0])
+    const pad = (n: number) => String(n).padStart(2, '0')
+    if (periodMs.value < 60000) {
+      return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    }
+    if (periodMs.value < 3600000) {
+      return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+    }
+    if (periodMs.value < 86400000) {
+      return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:00`
+    }
+    return `${date.getMonth() + 1}/${date.getDate()}`
+  })
+}
+
 async function doRenderChart() {
   if (!candlestickData.value.length) return
   chartReady.value = true
@@ -93,6 +107,74 @@ async function doRenderChart() {
   chartInstance = echarts.init(chartRef.value)
   const upColor = colorReversed.value ? '#26a69a' : '#ef5350'
   const downColor = colorReversed.value ? '#ef5350' : '#26a69a'
+
+  // 数据量过大：仅绘制收盘价折线，不绘制指标与信号线
+  if (isLargeData.value) {
+    chartInstance.setOption({
+      legend: {
+        data: ['Close', '资金曲线', '回撤'],
+        top: 0,
+        selected: { '回撤': false },
+      },
+      grid: [{ left: 60, right: 120, top: 30, bottom: 30 }],
+      xAxis: [
+        {
+          type: 'category',
+          gridIndex: 0,
+          data: buildXAxisData(),
+          axisLabel: { fontSize: 10 },
+        },
+      ],
+      yAxis: [
+        { type: 'value', scale: true, position: 'left', name: '价格', gridIndex: 0 },
+        { type: 'value', scale: true, position: 'right', name: '资金', splitLine: { show: false }, gridIndex: 0 },
+        { type: 'value', scale: true, position: 'right', offset: 60, name: '回撤', splitLine: { show: false }, axisLabel: { formatter: function(v: number) { return (v * 100).toFixed(0) + '%' } }, gridIndex: 0 },
+      ],
+      series: [
+        {
+          name: 'Close',
+          type: 'line',
+          xAxisIndex: 0,
+          yAxisIndex: 0,
+          data: allRows.value.map((r: any) => r.close ?? null),
+          symbol: 'none',
+          connectNulls: true,
+          lineStyle: { color: '#36cfc9', width: 1 },
+        },
+        {
+          name: '资金曲线',
+          type: 'line',
+          xAxisIndex: 0,
+          yAxisIndex: 1,
+          data: fundingData.value,
+          smooth: true,
+          symbol: 'none',
+          connectNulls: true,
+          lineStyle: { color: '#409eff', width: 1.5 },
+        },
+        {
+          name: '回撤',
+          type: 'line',
+          xAxisIndex: 0,
+          yAxisIndex: 2,
+          data: drawdownData.value,
+          smooth: true,
+          symbol: 'none',
+          connectNulls: true,
+          lineStyle: { color: '#e6a23c', width: 1.5 },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(230, 162, 60, 0.25)' },
+              { offset: 1, color: 'rgba(230, 162, 60, 0.02)' },
+            ]),
+          },
+        },
+      ],
+      dataZoom: [{ type: 'inside', xAxisIndex: [0] }],
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    }, true)
+    return
+  }
 
   // 构建选中字段的 series
   const extraSeries: any[] = selectedFields.value.map((field, idx) => ({
@@ -121,20 +203,7 @@ async function doRenderChart() {
       {
         type: 'category',
         gridIndex: 0,
-        data: candlestickData.value.map((item: any[]) => {
-          const date = new Date(item[0])
-          const pad = (n: number) => String(n).padStart(2, '0')
-          if (periodMs.value < 60000) {
-            return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-          }
-          if (periodMs.value < 3600000) {
-            return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-          }
-          if (periodMs.value < 86400000) {
-            return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:00`
-          }
-          return `${date.getMonth() + 1}/${date.getDate()}`
-        }),
+        data: buildXAxisData(),
         axisLabel: { fontSize: 10 },
       },
       {
@@ -255,17 +324,14 @@ watch(() => props.dataJson, () => {
 
 <template>
   <div class="chart-wrapper">
-    <template v-if="chartDataTooLarge">
-      <ElEmpty description="数据量过大，不绘制图表" />
-    </template>
-    <template v-else-if="!chartReady && candlestickData.length">
+    <template v-if="!chartReady && candlestickData.length">
       <div class="chart-placeholder">
-        <p>共 {{ dataCount }} 条 K 线数据</p>
+        <p>共 {{ dataCount }} 条 K 线数据{{ isLargeData ? '（数据量过大，仅绘制收盘价折线）' : '' }}</p>
         <div class="chart-actions">
           <ElButton type="primary" @click="doRenderChart">渲染图表</ElButton>
-          <ElButton @click="toggleColor">{{ colorReversed ? '红跌绿涨' : '红涨绿跌' }}</ElButton>
+          <ElButton v-if="!isLargeData" @click="toggleColor">{{ colorReversed ? '红跌绿涨' : '红涨绿跌' }}</ElButton>
         </div>
-        <div class="chart-fields" v-if="availableFields.length">
+        <div class="chart-fields" v-if="availableFields.length && !isLargeData">
           <span class="chart-fields__label">附加字段：</span>
           <ElSelect v-model="selectedFields" multiple placeholder="选择要显示的字段" size="small" style="width: 360px;">
             <ElOption v-for="f in availableFields" :key="f" :label="f" :value="f" />

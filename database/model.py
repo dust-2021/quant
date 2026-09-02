@@ -217,3 +217,41 @@ class Exchange(base):
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False, index=True, unique=True)
     
+
+
+# ================== 实盘逻辑表 ====================
+
+
+class Trader(base):
+    """
+    实盘执行器
+    """
+    __tablename__ = "trader"
+    
+    id = Column(Integer, primary_key=True)
+    uuid = Column(String(64), nullable=False, index=True, unique=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), nullable=False, index=True, unique=True)
+    content = Column(Text, nullable=False, default="", comment="执行器内容")
+    version = Column(String(255), nullable=False, default="0.0.1", comment="版本")
+    
+    __table_args__ = (
+        UniqueConstraint("name", "version", name="name_version_unique_idx"),
+    )
+
+
+class Account(base):
+    """
+    交易所实际账户信息表
+    """
+    __tablename__ = "account"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False, index=True, unique=True)
+    exchange = Column(String(255), nullable=False)
+    api_key = Column(String(255), nullable=False)
+    api_secret = Column(String(255), nullable=False)
+    api_passphrase = Column(String(255), nullable=True)
+
+    strategy_uuid = Column(String(64), nullable=True, index=True, comment="绑定的策略uuid,为空表示不绑定策略")
+    pause = Column(Integer, nullable=False, default=0, comment="暂停标记，0-未暂停，1-已暂停")
+    trader_id = Column(Integer, nullable=True, index=True, comment="绑定的实盘执行器ID,为空表示不绑定执行器")
