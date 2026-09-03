@@ -17,6 +17,11 @@ const proxyAddress = ref<string>('');
 const proxyPort = ref<number>(0);
 const availableProxy = ref<boolean>(false);
 
+const redisHost = ref<string>('');
+const redisPort = ref<number>(6379);
+const redisPassword = ref<string>('');
+const redisDb = ref<number>(0);
+
 async function handleRestart() {
     try {
         await ElMessageBox.confirm('确定要重启后端服务吗？', '确认重启', {
@@ -51,6 +56,11 @@ onBeforeMount(async () => {
     proxyAddress.value = await getSetting('ProxyAddress') || '';
     proxyPort.value = Number(await getSetting('ProxyPort')) || 0;
     availableProxy.value = (await getSetting('AvailableProxy') || 'false') === 'true';
+
+    redisHost.value = await getSetting('RedisHost') || '';
+    redisPort.value = Number(await getSetting('RedisPort')) || 6379;
+    redisPassword.value = await getSetting('RedisPassword') || '';
+    redisDb.value = Number(await getSetting('RedisDb')) || 0;
 });
 
 </script>
@@ -64,6 +74,26 @@ onBeforeMount(async () => {
                     <ElFormItem label="数据库链接">
                         <ElTooltip content="存储历史数据的数据库链接，格式为：dialect+driver://username:password@host:port/database">
                             <ElInput style="width: 400px;" v-model="dataCenterLink" type="text" :rows="2" @change="setSetting('DataCenterLink', dataCenterLink)"/>
+                        </ElTooltip>
+                    </ElFormItem>
+                    <ElFormItem label="Redis 地址">
+                        <ElTooltip content="可选 Redis 缓存地址，留空则不启用 redis 缓存（任务结果始终使用本地磁盘缓存）。修改后需重启生效">
+                            <ElInput style="width: 240px;" v-model="redisHost" type="text" placeholder="例如 127.0.0.1" @change="setSetting('RedisHost', redisHost)"/>
+                        </ElTooltip>
+                    </ElFormItem>
+                    <ElFormItem label="Redis 端口">
+                        <ElTooltip content="Redis 端口，默认 6379。修改后需重启生效">
+                            <ElInput style="width: 120px;" type="number" v-model="redisPort" @change="setSetting('RedisPort', Number(redisPort))" />
+                        </ElTooltip>
+                    </ElFormItem>
+                    <ElFormItem label="Redis 密码">
+                        <ElTooltip content="Redis 密码，无密码可留空。修改后需重启生效">
+                            <ElInput style="width: 240px;" v-model="redisPassword" type="password" show-password @change="setSetting('RedisPassword', redisPassword)" />
+                        </ElTooltip>
+                    </ElFormItem>
+                    <ElFormItem label="Redis 库号">
+                        <ElTooltip content="Redis 数据库编号，默认 0。修改后需重启生效">
+                            <ElInput style="width: 120px;" type="number" v-model="redisDb" @change="setSetting('RedisDb', Number(redisDb))" />
                         </ElTooltip>
                     </ElFormItem>
                     <ElFormItem label="基础日志">

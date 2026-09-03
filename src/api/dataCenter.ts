@@ -1,5 +1,4 @@
 import { fetch } from './base'
-import { setSetting } from './setting'
 import { ElMessage } from 'element-plus'
 
 export interface ExchangeItem {
@@ -47,10 +46,6 @@ export async function getScripts(): Promise<ScriptItem[]> {
     return []
   }
   return resp.data || []
-}
-
-export async function setExchangeConfig(exchange: string): Promise<boolean> {
-  return await setSetting('Exchange', exchange)
 }
 
 export async function saveScript(name: string, content: string): Promise<boolean> {

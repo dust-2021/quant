@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, computed, onBeforeMount } from 'vue';
-import { ElTable, ElTableColumn, ElTag, ElButton, ElEmpty, ElScrollbar, ElMessage, ElMessageBox, ElDialog, ElForm, ElFormItem, ElInput } from 'element-plus';
+import { ElCard, ElTag, ElButton, ElEmpty, ElScrollbar, ElMessage, ElMessageBox, ElDialog, ElForm, ElFormItem, ElInput } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { getFactorList, getFactorGroup, createFactorGroup, deleteFactorGroup } from '../../api/factor';
 
@@ -177,11 +177,12 @@ const displayGroups = computed(() => groups.value);
             </div>
             <ElScrollbar>
                 <div class="group-list" v-if="displayGroups.length > 0">
-                    <div
+                    <ElCard
                         v-for="group in displayGroups"
                         :key="group.name"
                         class="group-card"
                         :class="{ active: selectedGroup?.name === group.name }"
+                        shadow="hover"
                         @click="selectGroup(group)"
                     >
                         <div class="group-card__header">
@@ -190,7 +191,7 @@ const displayGroups = computed(() => groups.value);
                         </div>
                         <div class="group-card__desc" v-if="group.description">{{ group.description }}</div>
                         <div class="group-card__desc" v-else style="color: var(--text-secondary);">暂无描述</div>
-                    </div>
+                    </ElCard>
                 </div>
                 <ElEmpty v-if="!loading && displayGroups.length === 0" description="暂无因子分组" />
             </ElScrollbar>
@@ -212,33 +213,30 @@ const displayGroups = computed(() => groups.value);
                     </ElButton>
                 </div>
                 <ElScrollbar>
-                    <ElTable
-                        :data="selectedGroup.factors"
-                        style="width: 100%;"
-                        v-loading="loading"
-                        stripe
-                    >
-                        <ElTableColumn prop="name" label="因子名称" min-width="160">
-                            <template #default="{ row }">
-                                <span class="factor-name-link">{{ row.name }}</span>
-                            </template>
-                        </ElTableColumn>
-                        <ElTableColumn label="版本数" width="100" align="center">
-                            <template #default="{ row }">
-                                <ElTag size="small" type="info" effect="plain">{{ row.versionCount }} 个版本</ElTag>
-                            </template>
-                        </ElTableColumn>
-                        <ElTableColumn label="操作" width="100" fixed="right">
-                            <template #default="{ row }">
-                                <ElButton v-if="row.versionCount === 1" size="small" text type="primary" @click.stop="selectVersion(row.versions[0].uuid)">
-                                    查看
-                                </ElButton>
-                                <ElButton v-else size="small" text type="primary" @click.stop="openVersionDialog(row)">
-                                    选择版本
-                                </ElButton>
-                            </template>
-                        </ElTableColumn>
-                    </ElTable>
+                    <div class="factor-list" v-loading="loading">
+                        <template v-if="selectedGroup.factors.length > 0">
+                            <ElCard
+                                v-for="item in selectedGroup.factors"
+                                :key="item.name"
+                                class="factor-card"
+                                shadow="hover"
+                            >
+                                <div class="factor-card__header">
+                                    <span class="factor-card__name">{{ item.name }}</span>
+                                    <ElTag size="small" type="info" effect="plain">{{ item.versionCount }} 个版本</ElTag>
+                                </div>
+                                <div class="factor-card__actions">
+                                    <ElButton v-if="item.versionCount === 1" size="small" type="primary" @click="selectVersion(item.versions[0].uuid)">
+                                        查看
+                                    </ElButton>
+                                    <ElButton v-else size="small" type="primary" @click="openVersionDialog(item)">
+                                        选择版本
+                                    </ElButton>
+                                </div>
+                            </ElCard>
+                        </template>
+                        <ElEmpty v-else-if="!loading" description="暂无因子" />
+                    </div>
                 </ElScrollbar>
             </template>
             <div v-else class="right-placeholder">
@@ -288,8 +286,11 @@ const displayGroups = computed(() => groups.value);
 <style scoped>
 .factor-view {
     display: flex;
+    gap: 12px;
     height: 100%;
     box-sizing: border-box;
+    padding: 12px;
+    background-color: var(--bg-page);
 }
 
 /* ===== 左侧面板 ===== */
@@ -298,42 +299,40 @@ const displayGroups = computed(() => groups.value);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--border-tag, #e4e7ed);
     background-color: var(--bg-card);
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 0;
+}
+
+.left-panel :deep(.el-scrollbar) {
+    flex: 1;
+    min-height: 0;
 }
 
 .panel-header {
-    padding: 14px 16px;
     font-size: 15px;
     font-weight: 600;
     color: var(--text-primary);
-    border-bottom: 1px solid var(--border-tag, #e4e7ed);
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    margin-bottom: 8px;
 }
 
 .group-list {
-    padding: 8px;
+    padding: 2px;
 }
 
 .group-card {
-    padding: 12px;
-    margin-bottom: 8px;
-    border-radius: 8px;
-    border: 1px solid var(--border-tag, #e4e7ed);
     cursor: pointer;
-    transition: all 0.2s ease;
-    background-color: var(--bg-card);
-}
-.group-card:hover {
-    border-color: #409eff;
-    box-shadow: 0 2px 8px rgba(64, 158, 255, 0.12);
+    margin-bottom: 8px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .group-card.active {
-    border-color: #409eff;
-    background-color: var(--bg-tag-hover, #ecf5ff);
+    border-color: var(--el-color-primary);
+    box-shadow: 0 0 0 1px var(--el-color-primary);
 }
 
 .group-card__header {
@@ -362,7 +361,15 @@ const displayGroups = computed(() => groups.value);
     display: flex;
     flex-direction: column;
     background-color: var(--bg-card);
+    border-radius: 8px;
+    padding: 12px;
     min-width: 0;
+    min-height: 0;
+}
+
+.right-panel :deep(.el-scrollbar) {
+    flex: 1;
+    min-height: 0;
 }
 
 .right-placeholder {
@@ -372,12 +379,28 @@ const displayGroups = computed(() => groups.value);
     justify-content: center;
 }
 
-.factor-name-link {
-    color: #409eff;
-    cursor: pointer;
+.factor-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    padding: 2px;
 }
-.factor-name-link:hover {
-    text-decoration: underline;
+
+.factor-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+.factor-card__name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.factor-card__actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
 }
 
 /* ===== 版本选择对话框 ===== */

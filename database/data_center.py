@@ -106,8 +106,6 @@ async def load_data(
     target_s: set[str] = set(target)
     if _engine is None:
         raise ValueError("数据中心未链接")
-    if exchange is None:
-        exchange = await ConfigModel.get("Exchange")
     async with async_session() as session:
         resp = (
             await session.execute(

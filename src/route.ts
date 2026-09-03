@@ -60,6 +60,16 @@ const routes: RouteRecordRaw[] = [
         path: '/strategy/result',
         components: {main: () => import("./renderer/page/StrategyResult.vue")},
         name: 'StrategyResult',
+    },
+    {
+        path: '/trader',
+        components: {main: () => import("./renderer/page/TraderView.vue")},
+        name: 'TraderView',
+    },
+    {
+        path: '/account',
+        components: {main: () => import("./renderer/page/AccountView.vue")},
+        name: 'AccountView',
     }
 ];
 const router = createRouter({

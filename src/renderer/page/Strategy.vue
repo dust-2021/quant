@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-import { ElButton, ElCheckbox, ElCol, ElFormItem, ElInput, ElMessage, ElMessageBox, ElOption, ElRow, ElScrollbar, ElSelect, ElTabPane, ElTabs, ElDialog, ElCollapse, ElCollapseItem, ElTag, ElTooltip, MessageBoxInputData } from 'element-plus';
+import { ElButton, ElCheckbox, ElCol, ElFormItem, ElIcon, ElInput, ElMessage, ElMessageBox, ElOption, ElRow, ElScrollbar, ElSelect, ElTabPane, ElTabs, ElDialog, ElCollapse, ElCollapseItem, ElTag, ElTooltip, MessageBoxInputData } from 'element-plus';
+import { Plus } from '@element-plus/icons-vue';
 import { ref, computed, onBeforeMount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {Monaco} from 'vue-shiki-monaco';
@@ -440,13 +441,19 @@ watch(() => props.uuid, async (newUuid) => {
             <ElCol :span="6">
                 <div style="height: 100%; width: 100%;"> 
                     <div style="height: calc(60% - 70px);background-color: var(--bg-card);border-radius: 5px; padding: 10px;box-sizing: border-box;margin-bottom: 10px;">
-                        <div style="height: 30px;width: 100%;"><ElButton style="border: none;" @click="addParam">添加参数</ElButton></div>
+                        <div style="height: 30px;width: 100%; display: flex; align-items: center; justify-content: space-between;">
+                            <span style="font-size: 13px; color: var(--text-secondary);">参数列表</span>
+                            <ElButton circle size="small" type="primary" @click="addParam" title="添加参数"><ElIcon><Plus /></ElIcon></ElButton>
+                        </div>
                         <div style="height: calc(100% - 30px); display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; align-content: flex-start; overflow-y: auto; overflow-x: hidden; box-sizing: border-box;">
                             <ParamBand :key="item.name" :name="item.name" :type="item.type" :v="item.v" :change-type="true" :on-delete="deleteParam" :on-click="editParam" v-for="item in strategy?.params" />
                         </div>
                     </div>
                     <div style="height: 40%;background-color: var(--bg-card);border-radius: 5px; padding: 10px;box-sizing: border-box;">
-                        <div style="height: 30px;width: 100%;"><ElButton style="border: none;" @click="openFactorDialog">添加因子</ElButton></div>
+                        <div style="height: 30px;width: 100%; display: flex; align-items: center; justify-content: space-between;">
+                            <span style="font-size: 13px; color: var(--text-secondary);">因子列表</span>
+                            <ElButton circle size="small" type="primary" @click="openFactorDialog" title="添加因子"><ElIcon><Plus /></ElIcon></ElButton>
+                        </div>
                         <ElScrollbar>
                             <div
                                 v-for="(uuid, idx) in strategy.factors"

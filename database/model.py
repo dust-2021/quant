@@ -255,3 +255,4 @@ class Account(base):
     strategy_uuid = Column(String(64), nullable=True, index=True, comment="绑定的策略uuid,为空表示不绑定策略")
     pause = Column(Integer, nullable=False, default=0, comment="暂停标记，0-未暂停，1-已暂停")
     trader_id = Column(Integer, nullable=True, index=True, comment="绑定的实盘执行器ID,为空表示不绑定执行器")
+    cron_trigger = Column(String(255), nullable=True, comment="定时触发器cron表达式，空表示不使用定时触发")

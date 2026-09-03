@@ -14,13 +14,17 @@ class Config:
     DataCenterLink = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/data_center"
     MaxHttpPayload = 50 * 1024 * 1024 # 50M
     
+    # === 缓存配置（可选，RedisHost 留空时使用 diskcache）===
+    RedisHost = ""
+    RedisPort = 6379
+    RedisPassword = ""
+    RedisDb = 0
+    
     # === 动态配置 ===
     
     AvailableProxy = False
     ProxyAddress = ""
     ProxyPort = 0
-    
-    Exchange = ""
     
     Model = ""
     ApiKey = ""

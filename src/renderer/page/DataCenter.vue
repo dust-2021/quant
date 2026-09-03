@@ -2,8 +2,7 @@
 import { ref, computed, onBeforeMount } from 'vue'
 import { ElCard, ElTable, ElTableColumn, ElTag, ElButton, ElMessage, ElScrollbar, ElEmpty, ElDialog, ElForm, ElFormItem, ElInput, ElMessageBox, ElTabs, ElTabPane, ElSelect, ElOption, ElResult, ElDatePicker, ElDescriptions, ElDescriptionsItem } from 'element-plus'
 import { Monaco } from 'vue-shiki-monaco'
-import { getExchanges, getScripts, setExchangeConfig, saveScript, deleteScript, executeScript, getTargets, checkDataTable, checkDataIntegrity, createExchange, deleteExchange } from '../../api/dataCenter'
-import { getSetting } from '../../api/setting'
+import { getExchanges, getScripts, saveScript, deleteScript, executeScript, getTargets, checkDataTable, checkDataIntegrity, createExchange, deleteExchange } from '../../api/dataCenter'
 import { ThemeStore } from '../../store'
 import type { ExchangeItem, ScriptItem } from '../../api/dataCenter'
 
@@ -12,7 +11,6 @@ const monacoTheme = computed(() => themeStore.isDark ? 'github-dark' : 'github-l
 
 // ===== 交易所 =====
 const exchanges = ref<ExchangeItem[]>([])
-const currentExchange = ref<string>('')
 const exchangeLoading = ref(false)
 const exchangeLoaded = ref(false)
 
@@ -20,17 +18,9 @@ async function refreshExchanges() {
   exchangeLoading.value = true
   try {
     exchanges.value = await getExchanges()
-    currentExchange.value = (await getSetting<string>('Exchange')) || ''
   } finally {
     exchangeLoading.value = false
     exchangeLoaded.value = true
-  }
-}
-
-async function handleSelectExchange(exchange: ExchangeItem) {
-  const success = await setExchangeConfig(exchange.name)
-  if (success) {
-    currentExchange.value = exchange.name
   }
 }
 
@@ -70,9 +60,6 @@ async function handleDeleteExchange(exchange: ExchangeItem) {
   }
   const ok = await deleteExchange(exchange.name)
   if (ok) {
-    if (currentExchange.value === exchange.name) {
-      currentExchange.value = ''
-    }
     await refreshExchanges()
   }
 }
@@ -278,10 +265,6 @@ onBeforeMount(async () => {
     <div class="section exchange-section">
       <div class="section-header">
         <h3>交易所</h3>
-        <ElTag v-if="currentExchange" type="success" effect="dark">
-          当前: {{ currentExchange }}
-        </ElTag>
-        <ElTag v-else type="info">未配置交易所</ElTag>
         <ElButton type="primary" size="small" style="margin-left: auto;" @click="showExchangeDialog = true">新增交易所</ElButton>
       </div>
       <ElScrollbar v-loading="exchangeLoading">
@@ -290,24 +273,11 @@ onBeforeMount(async () => {
             v-for="item in exchanges"
             :key="item.id"
             class="exchange-card"
-            :class="{ active: currentExchange === item.name }"
             shadow="hover"
-            @click="handleSelectExchange(item)"
           >
             <div class="exchange-card__content">
               <span class="exchange-card__name">{{ item.name }}</span>
               <div class="exchange-card__actions">
-                <ElTag
-                  v-if="currentExchange === item.name"
-                  type="success"
-                  size="small"
-                  effect="plain"
-                >
-                  已选择
-                </ElTag>
-                <ElTag v-else type="info" size="small" effect="plain">
-                  点击切换
-                </ElTag>
                 <ElButton
                   type="danger"
                   size="small"
@@ -577,14 +547,8 @@ onBeforeMount(async () => {
 }
 
 .exchange-card {
-  cursor: pointer;
   transition: border-color 0.3s, box-shadow 0.3s;
   min-width: 160px;
-}
-
-.exchange-card.active {
-  border-color: var(--el-color-success);
-  box-shadow: 0 0 0 1px var(--el-color-success);
 }
 
 .exchange-card__content {

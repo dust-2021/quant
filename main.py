@@ -9,6 +9,7 @@ from cores.agent.base import MyAgent
 from database.base import init_db
 from database.data_center import init_data_center
 from database.model import Config as ConfDb
+from utils.cache import init_cache
 from utils.logger import setup_logging
 
 
@@ -25,6 +26,13 @@ async def main():
     await init_db()
     # 初始化数据中心
     _ = await init_data_center()
+    # 初始化统一缓存接口（配置了 redis 则使用 redis，否则使用 diskcache）
+    init_cache(
+        host=await ConfDb.get("RedisHost"),
+        port=await ConfDb.get("RedisPort"),
+        password=await ConfDb.get("RedisPassword"),
+        db=await ConfDb.get("RedisDb"),
+    )
     # 初始化日志
     setup_logging(
         level=await ConfDb.get("BaseLog"),
