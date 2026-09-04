@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from cores.executor.calculator import Calculator
 from database.base import DataPeriod, async_session
-from database.model import Calculator as CalculatorModel
+from database.model import Calculator as CalculatorModel, Config
 from utils.cache import TaskCache
 from utils.middleware.type_checker import json_post_checker
 from utils.types import AppCode, app_response
@@ -22,6 +22,10 @@ async def execute_strategy(
     if data is None:
         return web.json_response(
             app_response(code=AppCode.DATA_INVALID, msg="data is None")
+        )
+    if await Config.get("Living"):
+        return web.json_response(
+            app_response(code=AppCode.PERMISSION_DENIED, msg="实盘模式已开启，禁止回测执行")
         )
     period = DataPeriod.from_seconds(data.get("period", DataPeriod.HOUR.value))
     if period is None:

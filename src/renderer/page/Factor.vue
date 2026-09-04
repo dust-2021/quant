@@ -37,8 +37,15 @@ import typing as t
 # 参数
 params: t.Dict[str, t.Any] = {}
 
-# 执行上下文
-context: t.Dict[str, t.Any] = {}
+# 执行上下文（ContextBase 规范，运行时由系统覆写）
+context: t.Dict[str, t.Any] = {
+    "is_living": False,        # 是否实盘
+    "target": None,            # 标的
+    "period": 3600,            # 周期（秒）：60 / 3600 / 86400
+    "start_time": 0,           # 回测起始时间戳
+    "end_time": 0,             # 回测结束时间戳
+    "excute_strict_time": 0,   # 实盘严格执行时间
+}
 
 def run(data: pd.DataFrame):
     return data

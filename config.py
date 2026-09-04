@@ -7,18 +7,24 @@ class Config:
     配置默认值，当db中未存有时使用
     """
     Port = 5000
+    Living = False
     BaseLog = 'INFO'
     WebLog = 'INFO'
     SQLAlchemyLog = "WARNING"
     Auth = False
     DataCenterLink = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/data_center"
+    MainDbLink = ""
     MaxHttpPayload = 50 * 1024 * 1024 # 50M
     
     # === 缓存配置（可选，RedisHost 留空时使用 diskcache）===
-    RedisHost = ""
+    RedisHost = "127.0.0.1"
     RedisPort = 6379
     RedisPassword = ""
     RedisDb = 0
+    
+    # === Celery 配置 ===
+    CeleryBroker = "amqp://guest:guest@127.0.0.1:5672//"
+    CeleryBackend = "redis://127.0.0.1:6379/1"
     
     # === 动态配置 ===
     

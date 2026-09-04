@@ -90,7 +90,6 @@ class Strategy(base):
     update_time = Column(Integer, nullable=False, onupdate=lambda: int(datetime.datetime.now().timestamp()), default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005
     group = Column(String(255), nullable=False,default="", index=True, comment="分组")
     description = Column(Text, nullable=True)
-    factors = Column(String(1 << 16), nullable=False, default="[]", comment="因子uuid的json字符串")
     content = Column(Text, nullable=False, default="", comment="策略内容")
     params = Column(PickleType, comment="参数")
     
@@ -101,7 +100,22 @@ class Strategy(base):
     
     def dump(self):
         pass
-    
+
+
+class StrategyFactor(base):
+    """策略-因子关联表（一对多）"""
+
+    __tablename__ = "strategy_factor"
+
+    id = Column(Integer, primary_key=True)
+    strategy_uuid = Column(String(64), nullable=False, index=True)
+    factor_uuid = Column(String(64), nullable=False, index=True)
+    position = Column(Integer, nullable=False, default=0, comment="排序位置")
+
+    __table_args__ = (
+        UniqueConstraint("strategy_uuid", "factor_uuid", name="strategy_factor_unique_idx"),
+    )
+
 
 class Factor(base):
     __tablename__ = "factor"
@@ -253,6 +267,7 @@ class Account(base):
     api_passphrase = Column(String(255), nullable=True)
 
     strategy_uuid = Column(String(64), nullable=True, index=True, comment="绑定的策略uuid,为空表示不绑定策略")
-    pause = Column(Integer, nullable=False, default=0, comment="暂停标记，0-未暂停，1-已暂停")
+    status = Column(Integer, nullable=False, default=0, comment="暂停标记，0-执行中，1-已暂停")
     trader_id = Column(Integer, nullable=True, index=True, comment="绑定的实盘执行器ID,为空表示不绑定执行器")
-    cron_trigger = Column(String(255), nullable=True, comment="定时触发器cron表达式，空表示不使用定时触发")
+    period = Column(Integer, nullable=False, default=60, comment="执行周期 60，3600，86400")
+    target = Column(String(65535), nullable=False, comment="标的列表json")

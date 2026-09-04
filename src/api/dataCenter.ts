@@ -71,7 +71,9 @@ export async function deleteScript(name: string): Promise<boolean> {
 export async function executeScript(name: string, params?: Record<string, any>): Promise<{ data: any; error: string | null }> {
   const resp = await fetch('/api/data_center/script/execute', 'POST', { name, params })
   if (resp === null || resp.code !== 0) {
-    return { data: null, error: resp?.msg || '执行脚本失败' }
+    const msg = resp?.msg || '执行脚本失败'
+    ElMessage.error(msg)
+    return { data: null, error: msg }
   }
   return { data: resp.data, error: null }
 }

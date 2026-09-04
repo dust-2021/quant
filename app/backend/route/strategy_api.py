@@ -4,11 +4,11 @@ import typing as t
 import uuid
 
 from aiohttp import web
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.backend.route.execute import execute_strategy, strategy_result
 from database.base import async_session
-from database.model import Factor, Strategy, StrategyGroup
+from database.model import Factor, Strategy, StrategyFactor, StrategyGroup
 from utils.middleware.auth import auth
 from utils.middleware.type_checker import json_post_checker
 from utils.types import AppCode, app_response
@@ -21,13 +21,20 @@ async def get_strategy(request: web.Request):
             select(Strategy).filter_by(uuid=request.match_info["uuid"])
         )
         strategy = strategy.first()
-    if strategy is None:
-        return web.json_response(
-            app_response(code=AppCode.NOT_FOUND, msg="strategy not found")
+        if strategy is None:
+            return web.json_response(
+                app_response(code=AppCode.NOT_FOUND, msg="strategy not found")
+            )
+        # 从关联表获取因子 UUID（按 position 排序）
+        factor_uuids = list(
+            (
+                await s.execute(
+                    select(StrategyFactor.factor_uuid)
+                    .where(StrategyFactor.strategy_uuid == request.match_info["uuid"])
+                    .order_by(StrategyFactor.position, StrategyFactor.id)
+                )
+            ).scalars().all()
         )
-
-    # 解析因子UUID列表
-    factor_uuids = json.loads(strategy[0].factors) if strategy[0].factors else []
     # 加载因子详情
     factor_details = await Factor.load(factor_uuids) if factor_uuids else []
     factor_infos = (
@@ -124,6 +131,7 @@ async def update_strategy(
         return web.json_response(
             app_response(code=AppCode.DATA_INVALID, msg="data is None")
         )
+    factor_uuids: list[str] = data.get("factors", []) or []
     async with async_session() as s:
         new_uuid = None
         try:
@@ -136,7 +144,6 @@ async def update_strategy(
                     version=data.get("version"),
                     description=data.get("description", ""),
                     params=data.get("params", []),
-                    factors=json.dumps(data.get("factors", [])),
                     content=data.get("content", ""),
                 )
                 if await stra.exist():
@@ -146,6 +153,9 @@ async def update_strategy(
                         )
                     )
                 s.add(stra)
+                # 写入因子关联
+                for pos, fu in enumerate(factor_uuids):
+                    s.add(StrategyFactor(strategy_uuid=new_uuid, factor_uuid=fu, position=pos))
             else:
                 resp = await s.execute(select(Strategy).filter_by(uuid=data["uuid"]))
                 resp = resp.first()
@@ -158,9 +168,12 @@ async def update_strategy(
                 stra.group = data.get("group", stra.group)
                 stra.description = data.get("description", stra.description)
                 stra.params = data.get("params", stra.params)
-                stra.factors = json.dumps(data.get("factors", []))
                 stra.content = data.get("content", stra.content)
                 await s.flush()
+                # 重建因子关联
+                await s.execute(delete(StrategyFactor).where(StrategyFactor.strategy_uuid == data["uuid"]))
+                for pos, fu in enumerate(factor_uuids):
+                    s.add(StrategyFactor(strategy_uuid=data["uuid"], factor_uuid=fu, position=pos))
         except Exception as e:  # noqa: BLE001
             await s.rollback()
             return web.json_response(

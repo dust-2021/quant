@@ -6,9 +6,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 
-db_path = os.path.join(os.getcwd(), 'locals', 'quant.db')
+from config import Config
 
-async_engine = create_async_engine(f'sqlite+aiosqlite:///{db_path}', echo=False, pool_size=2)
+_main_db_link = (getattr(Config, 'MainDbLink', '') or '').strip()
+if _main_db_link:
+    async_engine = create_async_engine(_main_db_link, echo=False)
+else:
+    db_path = os.path.join(os.getcwd(), 'locals', 'quant.db')
+    async_engine = create_async_engine(f'sqlite+aiosqlite:///{db_path}', echo=False, pool_size=2)
 
 base = declarative_base()
 

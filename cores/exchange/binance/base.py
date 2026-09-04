@@ -7,14 +7,20 @@ result_T = t.TypeVar('result_T', bound=t.Any)
 class Interface(t.Generic[result_T]):
     
     url: str
-    ip_weight: int = 0
-    uid_weight: int = 0
+    _ip_weight: int = 0
+    _uid_weight: int = 0
     method: t.Literal["GET", "POST", "DELETE", "PUT"] = "GET"
     sign: bool = False
     market_type: MARKET_TYPE = "spot"
 
     def __init__(self):
         raise NotImplementedError("this is an abstract class, please implement it in subclass")
+    
+    def weight(self) -> tuple[int, int]:
+        """
+        获取接口权重
+        """
+        return self._ip_weight, self._uid_weight
     
     async def data(self, *args, **kwargs) -> dict[str, t.Any]:
         """

@@ -1,3 +1,4 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-aSche = AsyncIOScheduler()
+aSche = AsyncIOScheduler(timezone='UTC')
+

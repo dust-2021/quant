@@ -8,7 +8,7 @@ class BNBBurn(Interface[bool]):
     """
     bnb抵扣手续费
     """
-    ip_weight = 30
+    _ip_weight = 30
     url = "/fapi/v1/feeBurn"
     method = "GET"
     sign = True

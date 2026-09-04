@@ -1,8 +1,13 @@
-from cores.exchange.binance.api.basic.basic import Interface, SymbolLotSizeFilter, SymbolMinNotionalFilter, SymbolPriceFilter
-from cores.exchange.binance.binance import Binance
+from __future__ import annotations
+
+from cores.exchange.binance.base import Interface
+from cores.exchange.binance.api import SymbolLotSizeFilter, SymbolMinNotionalFilter, SymbolPriceFilter
 
 import decimal
 import typing as t
+
+if t.TYPE_CHECKING:
+    from cores.exchange.binance.binance import Binance
 
 
 class UMTrade(Interface[dict[str, t.Any]]):

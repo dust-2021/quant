@@ -2,13 +2,13 @@ import typing as t
 
 import numpy as np
 import pandas as pd
-
+from cores.executor.base import ContextBase
 from utils.types import Runner_Res
 
 
 def run(
     df: pd.DataFrame,
-    ctx: dict[str, t.Any],
+    ctx: ContextBase,
     params: dict[str, t.Any],
     is_multi: bool,
 ) -> Runner_Res:
@@ -90,8 +90,8 @@ def run(
     # ============ 计算指标 ================
 
     result: Runner_Res = {
-        "startTime": ctx['start_time'],
-        "endTime": ctx['end_time'],
+        "startTime": ctx.get('start_time'),
+        "endTime": ctx.get('end_time'),
         "target": ctx['target'],
         "period": ctx['period'],
         "params": params,

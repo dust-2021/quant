@@ -162,6 +162,7 @@ async function handleExecuteScript(script: ScriptItem) {
   executing.value = script.name
   try {
     const { data, error } = await executeScript(script.name)
+    if (error) return
     executeResult.value = data
     executeError.value = error
     executeResultName.value = script.name

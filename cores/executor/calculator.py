@@ -8,6 +8,7 @@ import loguru
 import pandas as pd
 
 from cores.backtest.runner_loader import Runner_T, get_runner
+from cores.executor.base import ContextBase
 from database.base import DataPeriod
 from database.data_center import load_data
 from utils.cache import TaskCache
@@ -20,7 +21,6 @@ PREFIX_STRATEGY = "_strategy."
 PREFIX_FACTOR = "_factor."
 
 _run_T: t.TypeAlias = t.Callable[[pd.DataFrame], pd.DataFrame]  # noqa: PYI042
-
 
 def _split_prefixed_params(flat: dict[str, t.Any]) -> tuple[dict[str, t.Any], dict[str, dict[str, t.Any]]]:
     """将带前缀的扁平参数字典拆分为策略参数和因子参数。
@@ -48,7 +48,7 @@ def _run_task(
     data: pd.DataFrame,
     multi_params: dict[str, t.Any],
     runner: Runner_T,
-    ctx: dict[str, t.Any],
+    ctx: ContextBase,
     uuid: str,
 ) -> None:
     """
@@ -85,8 +85,9 @@ def _run_task(
             # 合并因子默认参数 + 该因子专属的覆盖参数
             factor_merged = {x["name"]: x["v"] for x in f_raw["params"]}
             factor_merged.update(factor_overrides.get(f_raw.get("uuid", ""), {}))
-            setattr(f_mod, "params", factor_merged)  # noqa: B010
-            setattr(f_mod, "context", ctx)  # noqa: B010
+            # 覆盖mod内的初始参数值和上下文设置
+            t.cast(dict, getattr(f_mod, "params")).update(factor_merged)
+            t.cast(dict, getattr(f_mod, "context")).update(ctx)
             data = func(data)
 
         # 运行策略
@@ -98,11 +99,13 @@ def _run_task(
             raise NotImplementedError(f"cant find run function in strategy {strategy_name}")
         strategy_merged = {x["name"]: x["v"] for x in strategy_params}
         strategy_merged.update(strat_overrides)
-        strategy_mod.__setattr__("params", strategy_merged)
-        strategy_mod.__setattr__("context", ctx)
+        
+        # 覆盖mod内的初始参数值和上下文设置
+        t.cast(dict, getattr(strategy_mod, "params")).update(strategy_merged)
+        t.cast(dict, getattr(strategy_mod, "context")).update(ctx)
         data = strategy_func(data)
 
-        # 将多参数覆盖值合并到 strategy.params（保留前缀以区分来源）
+        # 将多参数覆盖值合并到 strategy.params（保留前缀以区分来源），仅在回测中用于区分
         for key, val in multi_params.items():
             strategy_merged[key] = val
         strategy_mod.__setattr__("params", strategy_merged)
@@ -223,7 +226,8 @@ class Calculator:
             if runner is None:
                 raise ValueError(f"加载回测执行器失败：{runner_name}")
 
-            ctx = {
+            ctx: ContextBase = {
+                "is_living": False,
                 "start_time": start_time,
                 "end_time": end_time,
                 "target": target,
@@ -246,13 +250,12 @@ class Calculator:
                 for id in ids:
                     TaskCache.set_result(id, f"task-{id} prepare data failed:{e.__str__()}", False)
                     
-                    
-    @staticmethod
-    async def simulation(strategy_uuid: str, target: str | t.Sequence[str] | None, min_line: int = 999, period: DataPeriod = DataPeriod.HOUR,
-                         runner_name: str = 'default'
+    
+    async def living_run(self,
+                         strategy_uuid: str,
+                         exchange: str,
+                         target: str | t.Sequence[str] | None,
                          ):
-        async def f():
-            pass
-
-        
-        aSche.add_job(f, trigger='cron')
+        ctx = {
+            'is_living': True
+        } 

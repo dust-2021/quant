@@ -77,3 +77,10 @@ class Runner_Res(t.TypedDict):
     maximumLoss: t.NotRequired[float]
     maximumProfit: t.NotRequired[float]
     averageProfitLossRatio: t.NotRequired[float | None]
+    
+    
+class CacheName(enum.Enum):
+    
+    Binance_Kline = 'binance_kline'
+    Binance_ExchangeInfo = 'binance_exchangeInfo'
+    Binance_ExchangeInfo_Future = 'binance_exchangeInfo_future'

@@ -9,6 +9,7 @@ import aiohttp
 from loguru import logger
 
 from utils.cache import get_cache
+from utils.types import CacheName
 from cores.exchange.binance.base import Interface, MARKET_TYPE
 from cores.exchange.binance.api.basic.exchange_info import ExchangeInfo, ExchangeInfoData, ExchangeInfoFutures, SymbolInfo, SymbolLotSizeFilter, SymbolMinNotionalFilter, SymbolNotionalFilter, SymbolPriceFilter
 
@@ -56,8 +57,9 @@ class Binance:
         
         self.session.headers.update({"X-MBX-APIKEY": self.api_key} if self.api_key else {})
         url = f"{self.base_url[interface.market_type]}{interface.url}{self._formatter(await interface.data(self), interface.sign)}"
-        self.ip_weight_cost += interface.ip_weight
-        self.uid_weight_cost += interface.uid_weight
+        ip_w, uid_w = interface.weight()
+        self.ip_weight_cost += ip_w
+        self.uid_weight_cost += uid_w
         if self.uid_weight_cost > 6000 or self.ip_weight_cost > 1200:
             logger.warning(f"Binance API weight limit exceeded: uid_weight_cost={self.uid_weight_cost}, ip_weight_cost={self.ip_weight_cost}")
         resp = await self.session.request(interface.method, url)
@@ -82,7 +84,7 @@ class Binance:
             if not f:
                 logger.error("Failed to fetch Binance exchange info")
                 raise ValueError("Failed to fetch Binance exchange info")
-            get_cache().set("binance_exchange_info", new_info)
+            get_cache().set(CacheName.Binance_ExchangeInfo.value, new_info)
             logger.info("Binance exchange info cached")
             return new_info
         return info
@@ -94,7 +96,7 @@ class Binance:
             if not f:
                 logger.error("Failed to fetch Binance futures exchange info")
                 raise ValueError("Failed to fetch Binance futures exchange info")
-            get_cache().set("binance_exchange_info_futures", new_info)
+            get_cache().set(CacheName.Binance_ExchangeInfo_Future.value, new_info)
             logger.info("Binance futures exchange info cached")
             return new_info
         return info

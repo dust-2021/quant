@@ -7,7 +7,7 @@ from sqlalchemy import select, text
 from database.base import DataPeriod
 from database.base import async_session as dc_async_session
 from database.data_center import get_session
-from database.model import Exchange, Script, Target
+from database.model import Config, Exchange, Script, Target
 from utils.middleware.type_checker import json_post_checker
 from utils.types import AppCode, app_response
 
@@ -134,6 +134,10 @@ async def execute_script(req: web.Request, data: dict[str, t.Any] | None = None)
     if data is None:
         return web.json_response(
             app_response(code=AppCode.DATA_INVALID, msg="缺少请求体")
+        )
+    if await Config.get("Living"):
+        return web.json_response(
+            app_response(code=AppCode.PERMISSION_DENIED, msg="实盘模式已开启，禁止执行数据脚本")
         )
     try:
         result = await Script.load_and_execute(
