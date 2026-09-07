@@ -16,6 +16,9 @@ class Config:
     MainDbLink = ""
     MaxHttpPayload = 50 * 1024 * 1024 # 50M
     
+    # === 交易所配置（启动时自动初始化到 exchange 表）===
+    Exchanges = ["binance"]
+    
     # === 缓存配置（可选，RedisHost 留空时使用 diskcache）===
     RedisHost = "127.0.0.1"
     RedisPort = 6379
@@ -31,6 +34,7 @@ class Config:
     AvailableProxy = False
     ProxyAddress = ""
     ProxyPort = 0
+    KlineCount = 1000  # 实盘K线数量（最大1500）
     
     Model = ""
     ApiKey = ""

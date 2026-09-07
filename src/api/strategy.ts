@@ -25,6 +25,14 @@ export async function getStrategyDetail(uuid: string) {
     return resp.data as {uuid: string, name: string, group: string, version: string, description: string, params: any[], factors: string[], factor_infos: {uuid: string, name: string, version: string, description: string}[], content: string};
 }
 
+export async function getStrategyBasic(uuid: string) {
+    const resp = await fetch<{uuid: string, name: string, version: string}>(`/api/strategy/basic/${uuid}`, 'GET');
+    if (resp === null || resp.code !== 0) {
+        return null;
+    }
+    return resp.data as {uuid: string, name: string, version: string};
+}
+
 export async function updateStrategy(params: Strategy) {
     return await fetch('/api/strategy/update', 'POST', params);
 }

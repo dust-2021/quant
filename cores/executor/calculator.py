@@ -5,14 +5,16 @@ import typing as t
 import uuid
 
 import loguru
+import numpy as np
 import pandas as pd
 
 from cores.backtest.runner_loader import Runner_T, get_runner
 from cores.executor.base import ContextBase
 from database.base import DataPeriod
 from database.data_center import load_data
-from utils.cache import TaskCache
+from utils.cache import TaskCache, get_cache
 from utils.scheduler import aSche
+from utils.types import CacheName
 
 from .base import Core
 
@@ -21,6 +23,13 @@ PREFIX_STRATEGY = "_strategy."
 PREFIX_FACTOR = "_factor."
 
 _run_T: t.TypeAlias = t.Callable[[pd.DataFrame], pd.DataFrame]  # noqa: PYI042
+
+# Binance K 线返回字段（与 /fapi/v1/klines 顺序一致）
+KLINE_COLUMNS: list[str] = [
+    "open_time", "open", "high", "low", "close", "volume",
+    "close_time", "quote_asset_volume", "number_of_trades",
+    "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore",
+]
 
 def _split_prefixed_params(flat: dict[str, t.Any]) -> tuple[dict[str, t.Any], dict[str, dict[str, t.Any]]]:
     """将带前缀的扁平参数字典拆分为策略参数和因子参数。
@@ -43,6 +52,54 @@ def _split_prefixed_params(flat: dict[str, t.Any]) -> tuple[dict[str, t.Any], di
     return strat, factors
 
 
+def _run_pipeline(
+    src_raw: dict[str, t.Any],
+    data: pd.DataFrame,
+    ctx: ContextBase,
+    multi_params: dict[str, t.Any],
+) -> tuple[object, pd.DataFrame]:
+    """运行因子与策略，返回 (strategy_module, 带信号列的 DataFrame)。"""
+    strategy_name: str = src_raw["strategy"]["name"]
+    strategy_params: list[dict[str, t.Any]] = src_raw["strategy"]["params"]
+    factors_raw: list[dict[str, t.Any]] = src_raw["factors"]
+
+    strat_overrides, factor_overrides = _split_prefixed_params(multi_params)
+
+    # 运行因子（使用对应 uuid 的覆盖参数）
+    for f_raw in factors_raw:
+        f_mod = Core.load_file(f_raw["name"], f_raw["content"])
+        if f_mod is None:
+            raise ValueError(f"failed to load factor module: {f_raw['name']}")
+        func: _run_T | None = getattr(f_mod, "run", None)
+        if func is None:
+            raise NotImplementedError(f"cant find run function in factor {f_raw['name']}")
+        factor_merged = {x["name"]: x["v"] for x in f_raw["params"]}
+        factor_merged.update(factor_overrides.get(f_raw.get("uuid", ""), {}))
+        t.cast(dict, getattr(f_mod, "params")).update(factor_merged)
+        t.cast(dict, getattr(f_mod, "context")).update(ctx)
+        data = func(data)
+
+    # 运行策略
+    strategy_mod = Core.load_file(strategy_name, src_raw["strategy"]["content"])
+    if strategy_mod is None:
+        raise ValueError(f"failed to load strategy module: {strategy_name}")
+    strategy_func: _run_T | None = getattr(strategy_mod, "run", None)
+    if strategy_func is None:
+        raise NotImplementedError(f"cant find run function in strategy {strategy_name}")
+    strategy_merged = {x["name"]: x["v"] for x in strategy_params}
+    strategy_merged.update(strat_overrides)
+    t.cast(dict, getattr(strategy_mod, "params")).update(strategy_merged)
+    t.cast(dict, getattr(strategy_mod, "context")).update(ctx)
+    data = strategy_func(data)
+
+    # 将多参数覆盖值合并到 strategy.params（保留前缀以区分来源）
+    for key, val in multi_params.items():
+        strategy_merged[key] = val
+    strategy_mod.__setattr__("params", strategy_merged)
+
+    return strategy_mod, data
+
+
 def _run_task(
     src_raw: dict[str, t.Any],
     data: pd.DataFrame,
@@ -63,53 +120,10 @@ def _run_task(
         loguru.logger.warning(f"task {uuid} droped by empty data")
         return
     try:
-        strategy_name: str = src_raw["strategy"]["name"]
-        strategy_params: list[dict[str, t.Any]] = src_raw["strategy"]["params"]
-        factors_raw: list[dict[str, t.Any]] = src_raw["factors"]
-
-        # 拆分带前缀的多参数
-        strat_overrides, factor_overrides = _split_prefixed_params(multi_params)
-
         loguru.logger.debug(
-            f"start executing strategy {strategy_name} with overrides={multi_params}, task id: {uuid}"
+            f"start executing strategy {src_raw['strategy']['name']} with overrides={multi_params}, task id: {uuid}"
         )
-
-        # 运行因子（使用对应 uuid 的覆盖参数）
-        for f_raw in factors_raw:
-            f_mod = Core.load_file(f_raw["name"], f_raw["content"])
-            if f_mod is None:
-                raise ValueError(f"failed to load factor module: {f_raw['name']}")
-            func: _run_T | None = getattr(f_mod, "run", None)
-            if func is None:
-                raise NotImplementedError(f"cant find run function in factor {f_raw['name']}")
-            # 合并因子默认参数 + 该因子专属的覆盖参数
-            factor_merged = {x["name"]: x["v"] for x in f_raw["params"]}
-            factor_merged.update(factor_overrides.get(f_raw.get("uuid", ""), {}))
-            # 覆盖mod内的初始参数值和上下文设置
-            t.cast(dict, getattr(f_mod, "params")).update(factor_merged)
-            t.cast(dict, getattr(f_mod, "context")).update(ctx)
-            data = func(data)
-
-        # 运行策略
-        strategy_mod = Core.load_file(strategy_name, src_raw["strategy"]["content"])
-        if strategy_mod is None:
-            raise ValueError(f"failed to load strategy module: {strategy_name}")
-        strategy_func: _run_T | None = getattr(strategy_mod, "run", None)
-        if strategy_func is None:
-            raise NotImplementedError(f"cant find run function in strategy {strategy_name}")
-        strategy_merged = {x["name"]: x["v"] for x in strategy_params}
-        strategy_merged.update(strat_overrides)
-        
-        # 覆盖mod内的初始参数值和上下文设置
-        t.cast(dict, getattr(strategy_mod, "params")).update(strategy_merged)
-        t.cast(dict, getattr(strategy_mod, "context")).update(ctx)
-        data = strategy_func(data)
-
-        # 将多参数覆盖值合并到 strategy.params（保留前缀以区分来源），仅在回测中用于区分
-        for key, val in multi_params.items():
-            strategy_merged[key] = val
-        strategy_mod.__setattr__("params", strategy_merged)
-
+        strategy_mod, data = _run_pipeline(src_raw, data, ctx, multi_params)
         # backtest
         result = runner(data, ctx, getattr(strategy_mod, "params", {}), multi_params.__len__() != 0)
     except Exception as e:  # noqa: BLE001
@@ -251,11 +265,74 @@ class Calculator:
                     TaskCache.set_result(id, f"task-{id} prepare data failed:{e.__str__()}", False)
                     
     
-    async def living_run(self,
-                         strategy_uuid: str,
+    @staticmethod
+    def _load_living_data(exchange: str, targets: t.Sequence[str], period: DataPeriod) -> pd.DataFrame:
+        """从缓存读取实盘原始数据（Binance K 线），拼接为与回测一致的 DataFrame。"""
+        if exchange != 'binance':
+            raise NotImplementedError(f"unsupported exchange: {exchange}")
+        cache = get_cache()
+        interval = {
+            DataPeriod.MINUTE: '1m',
+            DataPeriod.HOUR: '1h',
+            DataPeriod.DAY: '1d',
+        }[period]
+        frames: list[pd.DataFrame] = []
+        for sym in targets:
+            key = f'{CacheName.Binance_Kline.value}::{interval}::{sym}'
+            raw = cache.get(key)
+            if not raw:
+                loguru.logger.warning(f"living_run: cache miss {key}")
+                continue
+            df = pd.DataFrame(raw, columns=KLINE_COLUMNS)
+            for col in ('open', 'high', 'low', 'close', 'volume', 'quote_asset_volume',
+                        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'):
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype(float)
+            for col in ('open_time', 'close_time', 'number_of_trades', 'ignore'):
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype('int64')
+            df['code'] = sym
+            frames.append(df)
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True)
+
+    @staticmethod
+    async def living_run(strategy_uuid: str,
                          exchange: str,
                          target: str | t.Sequence[str] | None,
+                         period: DataPeriod = DataPeriod.HOUR,
+                         e_time: int = 0,
                          ):
-        ctx = {
-            'is_living': True
-        } 
+        """实盘策略执行：从缓存读取原始数据，运行因子+策略，返回各标的最新信号。"""
+        src_raw = await Core.prepare_raw(strategy_uuid)
+
+        targets: list[str] = [target] if isinstance(target, str) else list(target or [])
+        data = Calculator._load_living_data(exchange, targets, period)
+        if data.empty:
+            loguru.logger.warning(
+                f"living_run: no cached data, exchange={exchange} targets={targets} period={period.name}"
+            )
+            return []
+
+        ctx: ContextBase = {
+            'is_living': True,
+            'target': target,
+            'period': period.value,
+            'excute_strict_time': e_time,
+        }
+
+        strategy_mod, data = _run_pipeline(src_raw, data, ctx, {})
+        params: dict[str, t.Any] = t.cast(dict, getattr(strategy_mod, 'params', {}))
+        signal_name: str = str(params.get('signalName', 'signal'))
+
+        results: list[dict[str, t.Any]] = []
+        for code, group in data.groupby('code', sort=False):
+            group = group.sort_values('open_time')
+            last = group.iloc[-1]
+            sig = last.get(signal_name, np.nan)
+            results.append({
+                'target': code,
+                'open_time': int(last['open_time']),
+                'close': float(last['close']),
+                'signal': None if pd.isna(sig) else float(sig),
+            })
+        return results

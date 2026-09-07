@@ -33,9 +33,33 @@ class DataPeriod(Enum):
         return None
 
 
+async def _sync_account_table(conn):
+    """若 account 表为旧结构（缺少 status 列），删除重建（表内无数据）。"""
+    result = await conn.execute(text("select name from sqlite_master where type='table' and name='account'"))
+    if result.scalar() is None:
+        return
+    cols = [row[1] for row in (await conn.execute(text("PRAGMA table_info(account)"))).fetchall()]
+    if "status" in cols and "encrypt_type" in cols:
+        return
+    await conn.execute(text("DROP TABLE account"))
+
+
 async def init_db():
     async with async_engine.begin() as conn:
+        # 同步 account 表结构（旧结构且无数据时删除重建）
+        await _sync_account_table(conn)
         await conn.run_sync(base.metadata.create_all)
+        # 初始化交易所列表（不存在则添加）
+        for exchange_name in Config.Exchanges:
+            result = await conn.execute(
+                text("select id from exchange where name = :name"),
+                {"name": exchange_name},
+            )
+            if result.scalar() is None:
+                await conn.execute(
+                    text("insert into exchange (name) values (:name)"),
+                    {"name": exchange_name},
+                )
         # 检查默认分组是否存在，不存在则创建
         result = await conn.execute(
             text("select id from strategy_group where name = 'default'")

@@ -1,5 +1,7 @@
 import typing as t
 
+from loguru import logger
+
 MARKET_TYPE = t.Literal["spot", "futures.um", "futures.cm"]
 
 result_T = t.TypeVar('result_T', bound=t.Any)
@@ -33,3 +35,6 @@ class Interface(t.Generic[result_T]):
         解析返回数据
         """
         return data
+    
+    def log(self, info: t.Any) -> None:
+        logger.log('INFO', f'binance api: {self.url}, weight cost: ip-{self._ip_weight}, uid-{self._uid_weight} : {info}')

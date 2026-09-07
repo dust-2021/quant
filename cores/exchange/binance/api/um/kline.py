@@ -1,11 +1,13 @@
 from cores.exchange.binance.base import Interface
 import typing as t
 
+from loguru import logger
+
 class Kline(Interface[list[list[t.Any]]]):
     """
     获取K线数据
     """
-    _ip_weight = 1
+    _ip_weight = 10
     url = "/fapi/v1/klines"
     method = "GET"
     sign = False
@@ -21,7 +23,7 @@ class Kline(Interface[list[list[t.Any]]]):
         self.end_time = end_time
         self.limit = limit
 
-    async def data(self) -> dict[str, t.Any]:
+    async def data(self, *args: t.Any, **kwargs: t.Any) -> dict[str, t.Any]:
         data: dict[str, t.Any] = {
             "symbol": self.symbol,
             "interval": self.interval,
@@ -36,3 +38,12 @@ class Kline(Interface[list[list[t.Any]]]):
 
     async def parse(self, data: t.Any) -> list[list[t.Any]]:
         return data
+
+    def log(self, info: t.Any) -> None:
+        """K 线返回数据量大，仅记录条数，不打印原始数据。"""
+        count = len(info) if isinstance(info, list) else '?'
+        logger.log(
+            'INFO',
+            f'binance api: {self.url}, symbol: {self.symbol}, bars: {count}, '
+            f'weight cost: ip-{self._ip_weight}, uid-{self._uid_weight}',
+        )

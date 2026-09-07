@@ -9,8 +9,10 @@ from cores.agent.base import MyAgent
 from database.base import init_db
 from database.data_center import init_data_center
 from database.model import Config as ConfDb
+from jobs import init_jobs
 from utils.cache import init_cache
 from utils.logger import setup_logging
+from utils.scheduler import aSche
 
 
 async def open_browser():
@@ -49,6 +51,10 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner=runner, host="0.0.0.0", port=port)
     await site.start()
+    # 启动定时任务调度器
+    init_jobs()
+    aSche.start()
+    logger.info("scheduler started")
     await open_browser()
     while True:
         await asyncio.sleep(3600)

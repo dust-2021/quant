@@ -16,7 +16,7 @@ class SetLeverage(Interface[bool]):
         self.symbol = symbol
         self.leverage = leverage
 
-    async def data(self) -> dict[str, t.Any]:
+    async def data(self, *args: t.Any, **kwargs: t.Any) -> dict[str, t.Any]:
         return {
             "symbol": self.symbol,
             "leverage": self.leverage

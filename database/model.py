@@ -265,9 +265,28 @@ class Account(base):
     api_key = Column(String(255), nullable=False)
     api_secret = Column(String(255), nullable=False)
     api_passphrase = Column(String(255), nullable=True)
+    encrypt_type = Column(String(255), nullable=False, default='hmac')
 
     strategy_uuid = Column(String(64), nullable=True, index=True, comment="绑定的策略uuid,为空表示不绑定策略")
     status = Column(Integer, nullable=False, default=0, comment="暂停标记，0-执行中，1-已暂停")
     trader_id = Column(Integer, nullable=True, index=True, comment="绑定的实盘执行器ID,为空表示不绑定执行器")
     period = Column(Integer, nullable=False, default=60, comment="执行周期 60，3600，86400")
     target = Column(String(65535), nullable=False, comment="标的列表json")
+
+
+class SignalRecord(base):
+    """
+    信号记录表：实盘策略每次执行产生的信号快照
+    """
+    __tablename__ = "signal_record"
+
+    id = Column(Integer, primary_key=True)
+    exchange = Column(String(255), nullable=False, index=True, comment="交易所")
+    account_id = Column(Integer, nullable=False, index=True, comment="账号id")
+    strategy_uuid = Column(String(64), nullable=False, index=True, comment="策略uuid")
+    period = Column(Integer, nullable=False, comment="执行周期（秒）60/3600/86400")
+    target = Column(String(255), nullable=False, comment="标的")
+    excute_strict_time = Column(Integer, nullable=False, index=True, comment="严格执行时间（毫秒时间戳）")
+    trader_id = Column(Integer, nullable=True, index=True, comment="执行器id")
+    signal = Column(PickleType, nullable=True, comment="信号具体内容")
+    create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005

@@ -70,6 +70,20 @@ async def get_strategy(request: web.Request):
 
 
 @auth(perm=["strategy.read"])
+async def get_strategy_basic(request: web.Request):
+    """通过 uuid 查询策略基本信息（名称/版本）。"""
+    async with async_session() as s:
+        stra = (await s.execute(select(Strategy).filter_by(uuid=request.match_info["uuid"]))).scalar()
+    if stra is None:
+        return web.json_response(app_response(code=AppCode.NOT_FOUND, msg="strategy not found"))
+    return web.json_response(app_response(data={
+        "uuid": stra.uuid,
+        "name": stra.name,
+        "version": stra.version,
+    }))
+
+
+@auth(perm=["strategy.read"])
 async def get_strategy_group(request: web.Request):
     async with async_session() as s:
         strategy_group = await s.execute(select(StrategyGroup))
@@ -474,6 +488,7 @@ async def delete_result(
 
 
 rules = [
+    web.RouteDef("GET", "/strategy/basic/{uuid}", get_strategy_basic, {}),
     web.RouteDef("GET", "/strategy/{uuid}", get_strategy, {}),
     web.RouteDef("GET", "/strategy/group", get_strategy_group, {}),
     web.RouteDef("POST", "/strategy/group/create", create_strategy_group, {}),

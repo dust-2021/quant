@@ -24,16 +24,40 @@ class Binance:
     }
     ip_weight_cost: int = 0
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, api_secret: str = '', 
+                 encrypt_t: t.Literal['hmac', 'ed25519', 'rsa'] = 'hmac') -> None:
         self.api_key = api_key
+        self.api_secret = api_secret
+        self.encrypt_t = encrypt_t
         self.session = aiohttp.ClientSession(headers={"X-MBX-APIKEY": self.api_key} if self.api_key else {})
         self.uid_weight_cost: int = 0
 
-    def _sign(self, msg: str):
-        h = hmac.new(
-            self.api_key.encode(), msg.encode(), digestmod=hashlib.sha256
-        ).digest()
-        return base64.b64encode(h).decode().lower()
+    def _sign(self, msg: str) -> str:
+        if self.encrypt_t == 'hmac':
+            return hmac.new(
+                self.api_secret.encode(), msg.encode(), digestmod=hashlib.sha256
+            ).hexdigest()
+        if self.encrypt_t == 'ed25519':
+            return self._sign_ed25519(msg)
+        if self.encrypt_t == 'rsa':
+            return self._sign_rsa(msg)
+        raise ValueError(f'unsupported encrypt type: {self.encrypt_t}')
+
+    def _sign_ed25519(self, msg: str) -> str:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        private_key = Ed25519PrivateKey.from_private_bytes(base64.b64decode(self.api_secret))
+        return base64.b64encode(private_key.sign(msg.encode())).decode()
+
+    def _sign_rsa(self, msg: str) -> str:
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+        private_key = t.cast(
+            RSAPrivateKey,
+            serialization.load_pem_private_key(self.api_secret.encode(), password=None),
+        )
+        signature = private_key.sign(msg.encode(), padding.PKCS1v15(), hashes.SHA256())
+        return base64.b64encode(signature).decode()
 
     def _formatter(self, data: dict[str, t.Any], sign: bool = False) -> str:
         if sign and self.api_key == '':
@@ -43,7 +67,7 @@ class Binance:
             data['timestamp'] = int(time.time()) * 1000
         if len(data) == 0:
             return ""
-        query = '&'.join([f'{k}={v}' for k, v in data])
+        query = '&'.join([f'{k}={v}' for k, v in data.items()])
         if not sign:
             return f'?{query}'
         return f"?{query}&signature={self._sign(query)}"
@@ -64,9 +88,13 @@ class Binance:
             logger.warning(f"Binance API weight limit exceeded: uid_weight_cost={self.uid_weight_cost}, ip_weight_cost={self.ip_weight_cost}")
         resp = await self.session.request(interface.method, url)
         if resp.status != 200:
+            # TODO: 超过ip频率限制
+            if resp.status == 429 or resp.status == 418:
+                pass
             logger.error(f"Binance API request failed for {interface.url}: {resp.status} {await resp.text()}")
             return False, t.cast(request_T, {})
         data = await resp.json()
+        interface.log(data)
         return True, await interface.parse(data)
     
     async def requests(
@@ -78,7 +106,7 @@ class Binance:
     
     
     async def exchange_info(self) -> ExchangeInfoData:
-        info: ExchangeInfoData | None = get_cache().get("binance_exchange_info")
+        info: ExchangeInfoData | None = get_cache().get(CacheName.Binance_ExchangeInfo.value)
         if info is None:
             f, new_info = await self.request(ExchangeInfo())
             if not f:
@@ -90,7 +118,7 @@ class Binance:
         return info
     
     async def exchange_info_futures(self) -> ExchangeInfoData:
-        info: ExchangeInfoData | None = get_cache().get("binance_exchange_info_futures")
+        info: ExchangeInfoData | None = get_cache().get(CacheName.Binance_ExchangeInfo_Future.value)
         if info is None:
             f, new_info = await self.request(ExchangeInfoFutures())
             if not f:
@@ -118,4 +146,3 @@ class Binance:
                 return item
         else:
             raise ValueError(f"Binance futures exchange info does not contain {symbol} symbol")
-    

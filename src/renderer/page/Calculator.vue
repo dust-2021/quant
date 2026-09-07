@@ -119,32 +119,33 @@ onBeforeMount(() => refresh())
       <h3>回测算子</h3>
       <ElButton type="primary" size="small" @click="openCreate">新增算子</ElButton>
     </div>
-    <ElScrollbar v-loading="loading">
-      <ElTable v-if="calculators.length" :data="calculators" stripe style="width: 100%; height: 100%;">
-        <ElTableColumn prop="id" label="ID" width="60" align="center" />
-        <ElTableColumn prop="name" label="名称" width="140">
-          <template #default="{ row }">
-            <span :style="{ fontWeight: row.name === 'default' ? 600 : 400 }">{{ row.name }}</span>
-            <ElTag v-if="row.name === 'default'" size="small" type="info" effect="plain" style="margin-left: 4px;">内置</ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn prop="description" label="描述" min-width="200" show-overflow-tooltip />
-        <ElTableColumn prop="create_time" label="创建时间" width="160">
-          <template #default="{ row }">{{ formatTime(row.create_time) }}</template>
-        </ElTableColumn>
-        <ElTableColumn prop="update_time" label="更新时间" width="160">
-          <template #default="{ row }">{{ formatTime(row.update_time) }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="操作" width="140" align="center" fixed="right">
-          <template #default="{ row }">
-            <ElButton size="small" type="primary" link @click="openEdit(row)">编辑</ElButton>
-            <ElButton size="small" type="danger" link @click="handleDelete(row)"
-              :disabled="row.name === 'default'">删除</ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
-      <ElEmpty v-if="!loading && !calculators.length" description="暂无算子" />
-    </ElScrollbar>
+    <div class="content-card">
+      <ElScrollbar v-loading="loading">
+        <ElTable v-if="calculators.length" :data="calculators" stripe style="width: 100%;">
+          <ElTableColumn prop="name" label="名称" width="160">
+            <template #default="{ row }">
+              <span :style="{ fontWeight: row.name === 'default' ? 600 : 400 }">{{ row.name }}</span>
+              <ElTag v-if="row.name === 'default'" size="small" type="info" effect="plain" style="margin-left: 4px;">内置</ElTag>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn prop="description" label="描述" min-width="220" show-overflow-tooltip />
+          <ElTableColumn prop="create_time" label="创建时间" width="160">
+            <template #default="{ row }">{{ formatTime(row.create_time) }}</template>
+          </ElTableColumn>
+          <ElTableColumn prop="update_time" label="更新时间" width="160">
+            <template #default="{ row }">{{ formatTime(row.update_time) }}</template>
+          </ElTableColumn>
+          <ElTableColumn label="操作" width="140" align="center" fixed="right">
+            <template #default="{ row }">
+              <ElButton size="small" type="primary" link @click="openEdit(row)">编辑</ElButton>
+              <ElButton size="small" type="danger" link @click="handleDelete(row)"
+                :disabled="row.name === 'default'">删除</ElButton>
+            </template>
+          </ElTableColumn>
+        </ElTable>
+        <ElEmpty v-if="!loading && !calculators.length" description="暂无算子" />
+      </ElScrollbar>
+    </div>
 
     <!-- 编辑弹窗 -->
     <ElDialog v-model="showDialog" :title="isNew ? '新增算子' : `编辑 - ${editingName}`"
@@ -189,7 +190,18 @@ onBeforeMount(() => refresh())
 }
 .page-header h3 { margin: 0; font-size: 16px; font-weight: 600; }
 
-.calculator-page :deep(.el-scrollbar) {
+.content-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-card);
+  border-radius: 8px;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.content-card :deep(.el-scrollbar) {
   flex: 1;
   min-height: 0;
 }

@@ -17,6 +17,8 @@ const proxyAddress = ref<string>('');
 const proxyPort = ref<number>(0);
 const availableProxy = ref<boolean>(false);
 
+const klineCount = ref<number>(1000);
+
 const redisHost = ref<string>('');
 const redisPort = ref<number>(6379);
 const redisPassword = ref<string>('');
@@ -44,6 +46,16 @@ async function handleRestart() {
     }
 }
 
+function handleKlineCountChange() {
+    const v = Number(klineCount.value);
+    if (!Number.isFinite(v) || v <= 0) {
+        klineCount.value = 1000;
+    } else if (v > 1500) {
+        klineCount.value = 1500;
+    }
+    setSetting('KlineCount', klineCount.value);
+}
+
 onBeforeMount(async () => {
     dataCenterLink.value = await getSetting('DataCenterLink') || '';
 
@@ -56,6 +68,8 @@ onBeforeMount(async () => {
     proxyAddress.value = await getSetting('ProxyAddress') || '';
     proxyPort.value = Number(await getSetting('ProxyPort')) || 0;
     availableProxy.value = (await getSetting('AvailableProxy') || 'false') === 'true';
+
+    klineCount.value = Number(await getSetting('KlineCount')) || 1000;
 
     redisHost.value = await getSetting('RedisHost') || '';
     redisPort.value = Number(await getSetting('RedisPort')) || 6379;
@@ -134,6 +148,11 @@ onBeforeMount(async () => {
             <ElFormItem label="代理端口">
                 <ElTooltip content="代理端口，用于访问互联网">
                     <ElInput style="width: 120px;" type="number" v-model="proxyPort" @change="setSetting('ProxyPort', Number(proxyPort))" />
+                </ElTooltip>
+            </ElFormItem>
+            <ElFormItem label="实盘K线数量">
+                <ElTooltip content="实盘每次拉取的K线数量，默认1000，最大1500">
+                    <ElInput style="width: 120px;" type="number" v-model="klineCount" :max="1500" @change="handleKlineCountChange" />
                 </ElTooltip>
             </ElFormItem>
             <ElFormItem label="系统管理">

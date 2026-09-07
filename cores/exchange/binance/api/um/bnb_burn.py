@@ -17,7 +17,7 @@ class BNBBurn(Interface[bool]):
     def __init__(self, fee_burn: bool):
         self.fee_burn = fee_burn
 
-    async def data(self) -> dict[str, t.Any]:
+    async def data(self, *args: t.Any, **kwargs: t.Any) -> dict[str, t.Any]:
         return {
         }
 
@@ -37,7 +37,7 @@ class SetBNBBurn(Interface[bool]):
     def __init__(self, fee_burn: bool):
         self.fee_burn = fee_burn
 
-    async def data(self) -> dict[str, t.Any]:
+    async def data(self, *args: t.Any, **kwargs: t.Any) -> dict[str, t.Any]:
         return {
             "feeBurn": str(self.fee_burn).lower()
         }
