@@ -65,6 +65,10 @@ class ExchangeInfo(Interface[ExchangeInfoData]):
     
     async def parse(self, data: t.Any) -> ExchangeInfoData:
         return t.cast(ExchangeInfoData, data)
+    
+    
+    def log(self, info: t.Any) -> None:
+        return super().log('exchange info update')
 
 class ExchangeInfoFutures(Interface[ExchangeInfoData]):
     """
@@ -84,3 +88,7 @@ class ExchangeInfoFutures(Interface[ExchangeInfoData]):
     
     async def parse(self, data: t.Any) -> ExchangeInfoData:
         return t.cast(ExchangeInfoData, data)
+    
+    
+    def log(self, info: t.Any) -> None:
+        return super().log('exchange info future update')

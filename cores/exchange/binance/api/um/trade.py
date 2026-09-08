@@ -26,6 +26,8 @@ class UMTrade(Interface[dict[str, t.Any]]):
         self.type_ = "MARKET"  # Default to MARKET order
         self.quantity = decimal.Decimal(str(quantity))
         self.price = decimal.Decimal(str(price)) if price is not None else None
+        if order_uid and len(order_uid) > 36:
+            raise 
         self.order_uid = order_uid
 
     async def data(self, binance: Binance) -> dict[str, t.Any]:

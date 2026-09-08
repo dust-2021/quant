@@ -82,8 +82,10 @@
                         <ElOption v-for="s in strategyOptions" :key="s.value" :label="s.label" :value="s.value" />
                     </ElSelect>
                 </ElFormItem>
-                <ElFormItem label="执行器 ID">
-                    <ElInput v-model="createForm.trader_id" type="number" placeholder="可选" style="width: 100%;" />
+                <ElFormItem label="执行器">
+                    <ElSelect v-model="createForm.trader" placeholder="默认执行器" clearable filterable style="width: 100%;">
+                        <ElOption v-for="t in traderOptions" :key="t" :label="t" :value="t" />
+                    </ElSelect>
                 </ElFormItem>
                 <ElFormItem label="执行周期">
                     <ElSelect v-model="createForm.period" style="width: 160px;">
@@ -133,8 +135,10 @@
                         <ElOption v-for="s in strategyOptions" :key="s.value" :label="s.label" :value="s.value" />
                     </ElSelect>
                 </ElFormItem>
-                <ElFormItem label="执行器 ID">
-                    <ElInput v-model="editForm.trader_id" type="number" placeholder="可选" style="width: 100%;" />
+                <ElFormItem label="执行器">
+                    <ElSelect v-model="editForm.trader" placeholder="默认执行器" clearable filterable style="width: 100%;">
+                        <ElOption v-for="t in traderOptions" :key="t" :label="t" :value="t" />
+                    </ElSelect>
                 </ElFormItem>
             </ElForm>
             <template #footer>
@@ -149,7 +153,7 @@
 import { ref, onBeforeMount } from 'vue'
 import { ElTable, ElTableColumn, ElButton, ElIcon, ElSelect, ElOption, ElDialog, ElForm, ElFormItem, ElInput, ElMessage, ElMessageBox, ElEmpty, ElScrollbar } from 'element-plus'
 import { VideoPlay, VideoPause } from '@element-plus/icons-vue'
-import { getAccounts, createAccount, updateAccount, deleteAccount, setAccountStatus } from '../../api/account'
+import { getAccounts, createAccount, updateAccount, deleteAccount, setAccountStatus, getTraders } from '../../api/account'
 import { getExchanges, type ExchangeItem } from '../../api/dataCenter'
 import { getStrategyList } from '../../api/strategy'
 
@@ -163,7 +167,7 @@ interface AccountRow {
     encrypt_type: string
     strategy_uuid: string | null
     status: number
-    trader_id: number | null
+    trader: string | null
     period: number
     target: string
     targets: string[]
@@ -173,6 +177,7 @@ const accounts = ref<AccountRow[]>([])
 const exchangeOptions = ref<ExchangeItem[]>([])
 const strategyOptions = ref<{ value: string; label: string }[]>([])
 const strategyNameMap = ref<Record<string, string>>({})
+const traderOptions = ref<string[]>([])
 const loading = ref(false)
 const saving = ref(false)
 
@@ -222,6 +227,10 @@ async function loadStrategies() {
     }
 }
 
+async function loadTraders() {
+    traderOptions.value = (await getTraders()) || []
+}
+
 // ===== 行内状态切换 =====
 async function toggleStatus(row: any) {
     const newStatus = row.status === 0 ? 1 : 0
@@ -258,7 +267,7 @@ const createForm = ref({
     api_passphrase: '',
     encrypt_type: 'hmac',
     strategy_uuid: '',
-    trader_id: null as number | null,
+    trader: '' as string,
     period: 60,
     targets: [] as string[],
 })
@@ -266,7 +275,7 @@ const createForm = ref({
 function openCreateDialog() {
     createForm.value = {
         name: '', exchange: '', api_key: '', api_secret: '', api_passphrase: '',
-        encrypt_type: 'hmac', strategy_uuid: '', trader_id: null, period: 60, targets: [],
+        encrypt_type: 'hmac', strategy_uuid: '', trader: '', period: 60, targets: [],
     }
     showCreateDialog.value = true
 }
@@ -286,7 +295,7 @@ async function handleCreate() {
             api_passphrase: createForm.value.api_passphrase || null,
             encrypt_type: createForm.value.encrypt_type,
             strategy_uuid: createForm.value.strategy_uuid || null,
-            trader_id: createForm.value.trader_id,
+            trader: createForm.value.trader || null,
             period: createForm.value.period,
             target: JSON.stringify(createForm.value.targets || []),
         })
@@ -310,7 +319,7 @@ const editForm = ref({
     api_passphrase: '',
     encrypt_type: 'hmac',
     strategy_uuid: '',
-    trader_id: null as number | null,
+    trader: '' as string,
 })
 
 function openEditDialog(row: any) {
@@ -323,7 +332,7 @@ function openEditDialog(row: any) {
         api_passphrase: row.api_passphrase || '',
         encrypt_type: row.encrypt_type || 'hmac',
         strategy_uuid: row.strategy_uuid || '',
-        trader_id: row.trader_id,
+        trader: row.trader || '',
     }
     showEditDialog.value = true
 }
@@ -345,7 +354,7 @@ async function handleUpdate() {
             api_passphrase: editForm.value.api_passphrase || null,
             encrypt_type: editForm.value.encrypt_type,
             strategy_uuid: editForm.value.strategy_uuid || null,
-            trader_id: editForm.value.trader_id,
+            trader: editForm.value.trader || null,
         })
         if (ok) {
             showEditDialog.value = false
@@ -377,6 +386,7 @@ onBeforeMount(() => {
     refresh()
     loadExchanges()
     loadStrategies()
+    loadTraders()
 })
 </script>
 

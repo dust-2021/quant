@@ -269,7 +269,7 @@ class Account(base):
 
     strategy_uuid = Column(String(64), nullable=True, index=True, comment="绑定的策略uuid,为空表示不绑定策略")
     status = Column(Integer, nullable=False, default=0, comment="暂停标记，0-执行中，1-已暂停")
-    trader_id = Column(Integer, nullable=True, index=True, comment="绑定的实盘执行器ID,为空表示不绑定执行器")
+    trader = Column(String(255), nullable=True, index=True, comment="绑定的执行器名称,为空使用默认执行器")
     period = Column(Integer, nullable=False, default=60, comment="执行周期 60，3600，86400")
     target = Column(String(65535), nullable=False, comment="标的列表json")
 
@@ -287,6 +287,6 @@ class SignalRecord(base):
     period = Column(Integer, nullable=False, comment="执行周期（秒）60/3600/86400")
     target = Column(String(255), nullable=False, comment="标的")
     excute_strict_time = Column(Integer, nullable=False, index=True, comment="严格执行时间（毫秒时间戳）")
-    trader_id = Column(Integer, nullable=True, index=True, comment="执行器id")
+    trader = Column(String(255), nullable=True, comment="执行器名称")
     signal = Column(PickleType, nullable=True, comment="信号具体内容")
     create_time = Column(Integer, nullable=False, default=lambda: int(datetime.datetime.now().timestamp()))  # noqa: DTZ005

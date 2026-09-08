@@ -33,6 +33,16 @@ class DataPeriod(Enum):
         return None
 
 
+async def _sync_trader_column(conn, table: str) -> None:
+    """将表中 trader_id 列重命名为 trader（字符串名）。"""
+    result = await conn.execute(text(f"select name from sqlite_master where type='table' and name='{table}'"))
+    if result.scalar() is None:
+        return
+    cols = [row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()]
+    if "trader_id" in cols and "trader" not in cols:
+        await conn.execute(text(f"ALTER TABLE {table} RENAME COLUMN trader_id TO trader"))
+
+
 async def _sync_account_table(conn):
     """若 account 表为旧结构（缺少 status 列），删除重建（表内无数据）。"""
     result = await conn.execute(text("select name from sqlite_master where type='table' and name='account'"))
@@ -46,6 +56,9 @@ async def _sync_account_table(conn):
 
 async def init_db():
     async with async_engine.begin() as conn:
+        # 旧结构 trader_id → trader 重命名迁移
+        await _sync_trader_column(conn, 'account')
+        await _sync_trader_column(conn, 'signal_record')
         # 同步 account 表结构（旧结构且无数据时删除重建）
         await _sync_account_table(conn)
         await conn.run_sync(base.metadata.create_all)

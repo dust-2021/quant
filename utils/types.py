@@ -2,6 +2,7 @@ import enum
 import typing as t
 
 from loguru import logger
+import numpy as np
 
 
 class AppCode(enum.IntEnum):
@@ -33,25 +34,6 @@ class Permission(enum.Enum):
     STRATEGY_WRITE = 'STRATEGY_WRITE'
     
 
-
-class SingletonMeta(type):
-    """线程安全的单例元类"""
-    _instances: t.ClassVar[dict[type, object]] = {}
-    
-    def __call__(cls, *args: t.Any, **kwargs: t.Any) -> t.Any:
-        if cls not in cls._instances:
-            # 调用父类 type 的 __call__，它会自动处理 __new__ 和 __init__
-            instance = super().__call__(*args, **kwargs)
-            cls._instances[cls] = instance
-            logger.info(f'create singleton of {cls.__name__}')
-        return cls._instances[cls]
-    
-    @classmethod
-    def get_instance(cls, class_type: type) -> object | None:
-        """获取已创建的实例（用于调试）"""
-        return cls._instances.get(class_type)
-
-
 class Runner_Res(t.TypedDict):
     """
     回测执行器返回dict的类型规范
@@ -80,7 +62,36 @@ class Runner_Res(t.TypedDict):
     
     
 class CacheName(enum.Enum):
+    """
+    缓存数据名前缀
+    """
     
     Binance_Kline = 'binance_kline'
     Binance_ExchangeInfo = 'binance_exchangeInfo'
     Binance_ExchangeInfo_Future = 'binance_exchangeInfo_future'
+    Binance_Api_Limit = 'Binance_Api_Limit'
+    
+    
+class CustomError(Exception):
+    """"""
+
+
+class ContextBase(t.TypedDict):
+    """
+    上下文规范
+    """
+    is_living: bool
+    target: str | t.Sequence[str] | None
+    period: t.Literal[60, 3600, 86400]
+
+    # 回测设置
+    start_time: t.NotRequired[int]
+    end_time: t.NotRequired[int]
+
+    # 实盘设置
+    excute_strict_time: t.NotRequired[int]
+    strategy_uuid: t.NotRequired[str]
+    exchange: t.NotRequired[str]
+    signal_name: t.NotRequired[str]
+    
+    

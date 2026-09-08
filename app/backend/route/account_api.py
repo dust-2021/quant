@@ -7,12 +7,13 @@ from database.base import async_session
 from database.model import Account
 from cores.exchange.binance.api.basic.api_permission import ApiPermission
 from cores.exchange.binance.binance import Binance
+from cores.trader import trader_names
 from utils.middleware.auth import auth
 from utils.middleware.type_checker import json_post_checker
 from utils.types import AppCode, app_response
 
 # 允许置空（null）的字段
-_NULLABLE_FIELDS = {"api_passphrase", "strategy_uuid", "trader_id"}
+_NULLABLE_FIELDS = {"api_passphrase", "strategy_uuid", "trader"}
 
 
 def _account_to_dict(acc: Account) -> dict[str, t.Any]:
@@ -26,7 +27,7 @@ def _account_to_dict(acc: Account) -> dict[str, t.Any]:
         "encrypt_type": acc.encrypt_type,
         "strategy_uuid": acc.strategy_uuid,
         "status": acc.status,
-        "trader_id": acc.trader_id,
+        "trader": acc.trader,
         "period": acc.period,
         "target": acc.target,
     }
@@ -37,6 +38,12 @@ async def list_accounts(request: web.Request):
     async with async_session() as s:
         rows = (await s.execute(select(Account))).scalars().all()
     return web.json_response(app_response(data=[_account_to_dict(a) for a in rows]))
+
+
+@auth(perm=["account.read"])
+async def list_traders(request: web.Request):
+    """获取可用的执行器名称列表。"""
+    return web.json_response(app_response(data=trader_names()))
 
 
 @auth(perm=["account.read"])
@@ -57,7 +64,7 @@ async def get_account(request: web.Request):
 @json_post_checker(
     necessary_keys={"name": str, "exchange": str},
     optional_keys={"api_key": str, "api_secret": str, "api_passphrase": str,
-                   "encrypt_type": str, "strategy_uuid": str, "trader_id": int,
+                   "encrypt_type": str, "strategy_uuid": str, "trader": str,
                    "period": int, "target": str},
 )
 async def create_account(request: web.Request, data: dict[str, t.Any] | None = None):
@@ -79,7 +86,7 @@ async def create_account(request: web.Request, data: dict[str, t.Any] | None = N
                 encrypt_type=data.get("encrypt_type", "hmac"),
                 strategy_uuid=data.get("strategy_uuid"),
                 status=1,
-                trader_id=data.get("trader_id"),
+                trader=data.get("trader"),
                 period=data.get("period", 60),
                 target=data.get("target", "[]"),
             )
@@ -96,7 +103,7 @@ async def create_account(request: web.Request, data: dict[str, t.Any] | None = N
     necessary_keys={"id": int},
     optional_keys={"name": str, "exchange": str, "api_key": str, "api_secret": str,
                    "api_passphrase": str, "encrypt_type": str, "strategy_uuid": str,
-                   "trader_id": int, "period": int, "target": str},
+                   "trader": str, "period": int, "target": str},
 )
 async def update_account(request: web.Request, data: dict[str, t.Any] | None = None):
     if data is None:
@@ -107,7 +114,7 @@ async def update_account(request: web.Request, data: dict[str, t.Any] | None = N
             if acc is None:
                 return web.json_response(app_response(code=AppCode.NOT_FOUND, msg="账号不存在"))
             for field in ("name", "exchange", "api_key", "api_secret", "api_passphrase",
-                          "encrypt_type", "strategy_uuid", "trader_id", "period", "target"):
+                          "encrypt_type", "strategy_uuid", "trader", "period", "target"):
                 if field not in data:
                     continue
                 if field in _NULLABLE_FIELDS:
@@ -204,4 +211,5 @@ rules = [
     web.RouteDef("POST", "/account/update", update_account, {}),
     web.RouteDef("POST", "/account/status", set_account_status, {}),
     web.RouteDef("POST", "/account/delete", delete_account, {}),
+    web.RouteDef("GET", "/trader/list", list_traders, {}),
 ]

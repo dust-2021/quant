@@ -11,13 +11,21 @@ export interface AccountItem {
   encrypt_type: string
   strategy_uuid: string | null
   status: number
-  trader_id: number | null
+  trader: string | null
   period: number
   target: string
 }
 
 export async function getAccounts(): Promise<AccountItem[]> {
   const resp = await fetch<AccountItem[]>('/api/account/list', 'GET')
+  if (resp === null || resp.code !== 0) {
+    return []
+  }
+  return resp.data || []
+}
+
+export async function getTraders(): Promise<string[]> {
+  const resp = await fetch<string[]>('/api/trader/list', 'GET')
   if (resp === null || resp.code !== 0) {
     return []
   }

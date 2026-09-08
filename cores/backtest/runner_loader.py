@@ -3,10 +3,10 @@ import typing as t
 import pandas as pd
 from sqlalchemy import select
 
-from cores.executor.base import Core, ContextBase
+from cores.executor.base import Core
 from database.base import async_session
 from database.model import Calculator as CalculatorModel
-from utils.types import Runner_Res
+from utils.types import ContextBase, Runner_Res
 
 from .runners.default import run as default_runner
 

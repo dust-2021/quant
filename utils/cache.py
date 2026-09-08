@@ -1,7 +1,6 @@
 import fnmatch
 import json
 import os
-import pickle
 import typing as t
 from collections import namedtuple
 
@@ -92,10 +91,10 @@ class _RedisCache(Cache):
 
     def get(self, key: str) -> t.Any:
         raw = self._client.get(key)
-        return None if raw is None else pickle.loads(t.cast(bytes, raw))
+        return None if raw is None else json.loads(raw)
 
     def set(self, key: str, value: t.Any, expire: int | None = None) -> None:
-        self._client.set(key, pickle.dumps(value), ex=expire)
+        self._client.set(key, json.dumps(value), ex=expire)
 
     def delete(self, key: str) -> None:
         self._client.delete(key)
@@ -114,18 +113,18 @@ class _RedisCache(Cache):
         return int(self._client.incrby(key, amount))
 
     def hset(self, key: str, field: str, value: t.Any) -> None:
-        self._client.hset(key, field, pickle.dumps(value))
+        self._client.hset(key, field, json.dumps(value))
 
     def hget(self, key: str, field: str) -> t.Any:
         raw = self._client.hget(key, field)
-        return None if raw is None else pickle.loads(t.cast(bytes, raw))
+        return None if raw is None else json.loads(raw)
 
     def hgetall(self, key: str) -> dict[str, t.Any]:
         raw = self._client.hgetall(key)
         result: dict[str, t.Any] = {}
         for k, v in raw.items():
             fk = k.decode('utf-8') if isinstance(k, bytes) else k
-            result[fk] = pickle.loads(t.cast(bytes, v))
+            result[fk] = json.loads(v)
         return result
 
     def hdel(self, key: str, *fields: str) -> None:

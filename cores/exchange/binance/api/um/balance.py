@@ -23,6 +23,12 @@ class Balance(Interface[list[BalanceResp]]):
     _ip_weight = 5
     sign = True
     market_type = 'futures.um'
-    
+
+    def __init__(self):
+        pass
+
+    async def data(self, *args: t.Any, **kwargs: t.Any) -> dict[str, t.Any]:
+        return {}
+
     async def parse(self, data: t.Any) -> list[BalanceResp]:
         return t.cast(list[BalanceResp], data)

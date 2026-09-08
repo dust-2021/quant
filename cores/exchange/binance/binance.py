@@ -87,6 +87,7 @@ class Binance:
         if self.uid_weight_cost > 6000 or self.ip_weight_cost > 1200:
             logger.warning(f"Binance API weight limit exceeded: uid_weight_cost={self.uid_weight_cost}, ip_weight_cost={self.ip_weight_cost}")
         resp = await self.session.request(interface.method, url)
+        self._update_api_limit_cache(interface.market_type, resp)
         if resp.status != 200:
             # TODO: 超过ip频率限制
             if resp.status == 429 or resp.status == 418:
@@ -96,6 +97,22 @@ class Binance:
         data = await resp.json()
         interface.log(data)
         return True, await interface.parse(data)
+
+    def _update_api_limit_cache(self, market_type: MARKET_TYPE, resp: aiohttp.ClientResponse) -> None:
+        """把响应头中的限频用量写入缓存（JSON 格式，key: Binance_Api_Limit::{market_type}）。"""
+        try:
+            data = {
+                'usedWeight1m': resp.headers.get('X-MBX-USED-WEIGHT-1M'),
+                'orderCount10s': resp.headers.get('X-MBX-ORDER-COUNT-10S'),
+                'orderCount1m': resp.headers.get('X-MBX-ORDER-COUNT-1M'),
+            }
+            data = {k: (int(v) if v is not None else None) for k, v in data.items()}
+            if all(v is None for v in data.values()):
+                return
+            key = f'{CacheName.Binance_Api_Limit.value}::{market_type}'
+            get_cache().set(key, data)
+        except Exception:  # noqa: BLE001
+            pass
     
     async def requests(
         self, interfaces: list[Interface[request_T]]

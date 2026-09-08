@@ -5,7 +5,6 @@ from aiohttp import web
 from loguru import logger
 
 from app.backend.app import generate_app
-from cores.agent.base import MyAgent
 from database.base import init_db
 from database.data_center import init_data_center
 from database.model import Config as ConfDb
@@ -41,8 +40,6 @@ async def main():
         aiohttp_level=await ConfDb.get("WebLog"),
         sqlalchemy_level=await ConfDb.get("SQLAlchemyLog"),
     )
-    # 初始化agent
-    _ = MyAgent("")
 
     port: int = await ConfDb.get("Port")
     app = generate_app(await ConfDb.get("MaxHttpPayload"))
@@ -52,9 +49,9 @@ async def main():
     site = web.TCPSite(runner=runner, host="0.0.0.0", port=port)
     await site.start()
     # 启动定时任务调度器
-    init_jobs()
-    aSche.start()
-    logger.info("scheduler started")
+    # init_jobs()
+    # aSche.start()
+    # logger.info("scheduler started")
     await open_browser()
     while True:
         await asyncio.sleep(3600)

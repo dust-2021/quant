@@ -5,11 +5,10 @@ import typing as t
 import uuid
 
 import loguru
-import numpy as np
 import pandas as pd
 
 from cores.backtest.runner_loader import Runner_T, get_runner
-from cores.executor.base import ContextBase
+from utils.types import ContextBase
 from database.base import DataPeriod
 from database.data_center import load_data
 from utils.cache import TaskCache, get_cache
@@ -296,13 +295,14 @@ class Calculator:
         return pd.concat(frames, ignore_index=True)
 
     @staticmethod
-    async def living_run(strategy_uuid: str,
-                         exchange: str,
-                         target: str | t.Sequence[str] | None,
-                         period: DataPeriod = DataPeriod.HOUR,
-                         e_time: int = 0,
-                         ):
-        """实盘策略执行：从缓存读取原始数据，运行因子+策略，返回各标的最新信号。"""
+    async def living_run(ctx: ContextBase) -> tuple[pd.DataFrame, dict[str, t.Any]]:
+        """实盘策略执行：从缓存读取原始数据，运行因子+策略，返回 (带信号列的 DataFrame, 策略参数)。"""
+        strategy_uuid = t.cast(str, ctx.get('strategy_uuid'))
+        exchange = t.cast(str, ctx.get('exchange', ''))
+        target = ctx.get('target')
+        period = DataPeriod(t.cast(int, ctx.get('period', DataPeriod.HOUR.value)))
+        e_time = t.cast(int, ctx.get('excute_strict_time', 0))
+
         src_raw = await Core.prepare_raw(strategy_uuid)
 
         targets: list[str] = [target] if isinstance(target, str) else list(target or [])
@@ -311,28 +311,15 @@ class Calculator:
             loguru.logger.warning(
                 f"living_run: no cached data, exchange={exchange} targets={targets} period={period.name}"
             )
-            return []
+            return data, {}
 
-        ctx: ContextBase = {
+        pipeline_ctx: ContextBase = {
             'is_living': True,
             'target': target,
-            'period': period.value,
+            'period': t.cast(t.Literal[60, 3600, 86400], period.value),
             'excute_strict_time': e_time,
         }
 
-        strategy_mod, data = _run_pipeline(src_raw, data, ctx, {})
+        strategy_mod, data = _run_pipeline(src_raw, data, pipeline_ctx, {})
         params: dict[str, t.Any] = t.cast(dict, getattr(strategy_mod, 'params', {}))
-        signal_name: str = str(params.get('signalName', 'signal'))
-
-        results: list[dict[str, t.Any]] = []
-        for code, group in data.groupby('code', sort=False):
-            group = group.sort_values('open_time')
-            last = group.iloc[-1]
-            sig = last.get(signal_name, np.nan)
-            results.append({
-                'target': code,
-                'open_time': int(last['open_time']),
-                'close': float(last['close']),
-                'signal': None if pd.isna(sig) else float(sig),
-            })
-        return results
+        return data, params

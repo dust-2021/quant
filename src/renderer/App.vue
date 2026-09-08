@@ -45,7 +45,8 @@
             <span>实盘</span>
           </template>
           <el-menu-item index="6-1" @click="router.push({name: 'TraderView'})"><el-icon><CustomIcon name="launcher" /></el-icon><span>执行器</span></el-menu-item>
-          <el-menu-item index="6-2" @click="router.push({name: 'AccountView'})"><el-icon><CustomIcon name="exchangeAccount" /></el-icon><span>账号</span></el-menu-item>
+          <el-menu-item index="6-2" @click="router.push({name: 'AccountView'})"><el-icon><CustomIcon name="wallet" /></el-icon><span>账号</span></el-menu-item>
+          <el-menu-item index="6-3" @click="router.push({name: 'ExchangeView'})"><el-icon><CustomIcon name="exchange" /></el-icon><span>交易所</span></el-menu-item>
         </el-sub-menu>
         <el-menu-item index="7" @click="router.push({name: 'Setting'})">
           <el-icon><CustomIcon name="setting" /></el-icon>

@@ -106,17 +106,3 @@ class Core:
         cls._get_pool().submit(f, *args, **kwargs)
 
 
-class ContextBase(t.TypedDict):
-    """
-    上下文规范
-    """
-    is_living: bool
-    target: str | t.Sequence[str] | None
-    period: t.Literal[60, 3600, 86400]
-
-    # 回测设置
-    start_time: t.NotRequired[int]
-    end_time: t.NotRequired[int]
-
-    # 实盘设置
-    excute_strict_time: t.NotRequired[int]

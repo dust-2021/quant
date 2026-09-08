@@ -2,7 +2,7 @@ import typing as t
 
 import numpy as np
 import pandas as pd
-from cores.executor.base import ContextBase
+from utils.types import ContextBase
 from utils.types import Runner_Res
 
 
